@@ -1,0 +1,12 @@
+# IDE file
+.idea/
+
+# data log
+/logs
+
+# data set
+/data.cifar10/
+
+
+# cache
+models/__pycache__/
