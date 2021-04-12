@@ -51,6 +51,8 @@ parser.add_argument('--arch', default='vgg', type=str,
 parser.add_argument('--depth', default=19, type=int,
                     help='depth of the neural network')
 
+# 0. Preset
+
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -61,6 +63,8 @@ if args.cuda:
 if not os.path.exists(args.save):
     os.makedirs(args.save)
 
+
+# 1. Dataset
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 if args.dataset == 'cifar10':
     train_loader = torch.utils.data.DataLoader(
@@ -97,6 +101,7 @@ else:
                        ])),
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
+# 2. Model: fine-tune the pruned network
 if args.refine:
     checkpoint = torch.load(args.refine)
     model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth, cfg=checkpoint['cfg'])
@@ -107,8 +112,12 @@ else:
 if args.cuda:
     model.cuda()
 
+
+# 3. Optimizer
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
+
+# -1. Resume the process
 if args.resume:
     if os.path.isfile(args.resume):
         print("=> loading checkpoint '{}'".format(args.resume))
@@ -122,11 +131,13 @@ if args.resume:
     else:
         print("=> no checkpoint found at '{}'".format(args.resume))
 
+
 # additional subgradient descent on the sparsity-induced penalty term
 def updateBN():
     for m in model.modules():
         if isinstance(m, nn.BatchNorm2d):
             m.weight.grad.data.add_(args.s*torch.sign(m.weight.data))  # L1
+
 
 def train(epoch):
     model.train()
@@ -139,13 +150,14 @@ def train(epoch):
         loss = F.cross_entropy(output, target)
         pred = output.data.max(1, keepdim=True)[1]
         loss.backward()
-        if args.sr:
+        if args.sr:  # sparsity regularization
             updateBN()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.1f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item()))
+
 
 def test():
     model.eval()
@@ -167,6 +179,7 @@ def test():
         100. * correct / len(test_loader.dataset)))
     return correct / float(len(test_loader.dataset))
 
+
 def save_checkpoint(state, is_best, filepath):
     torch.save(state, os.path.join(filepath, 'checkpoint.pth.tar'))
     if is_best:
@@ -176,7 +189,7 @@ def save_checkpoint(state, is_best, filepath):
 if __name__ == '__main__':
     best_prec1 = 0.
     for epoch in range(args.start_epoch, args.epochs):
-        if epoch in [args.epochs * 0.5, args.epochs * 0.75]:
+        if epoch in [args.epochs * 0.5, args.epochs * 0.75]:  # decent the learning rate
             for param_group in optimizer.param_groups:
                 param_group['lr'] *= 0.1
         train(epoch)

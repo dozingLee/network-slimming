@@ -1,12 +1,17 @@
 # IDE file
 .idea/
 
+
 # data log
 /logs
+/mask-impl/logs/
 
 # data set
 /data.cifar10/
+/data.cifar100/
+/mask-impl/data.cifar10/
+/mask-impl/data.cifar100/
 
 
 # cache
-models/__pycache__/
+/models/__pycache__/
