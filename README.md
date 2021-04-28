@@ -25,7 +25,7 @@ torch v0.3.1, torchvision v0.2.0
 ## Channel Selection Layer
 We introduce `channel selection` layer to help the  pruning of ResNet and DenseNet. This layer is easy to implement. It stores a parameter `indexes` which is initialized to an all-1 vector. During pruning, it will set some places to 0 which correspond to the pruned channels.
 
-## Baseline 
+## 1. Train Baseline 
 
 The `dataset` argument specifies which dataset to use: `cifar10` or `cifar100`. The `arch` argument specifies the architecture to use: `vgg`,`resnet` or
 `densenet`. The depth is chosen to be the same as the networks used in the paper.
@@ -35,7 +35,7 @@ python main.py --dataset cifar10 --arch resnet --depth 164
 python main.py --dataset cifar10 --arch densenet --depth 40
 ```
 
-## Train with Sparsity
+## 2. Train Sparsity
 
 ```shell
 python main.py -sr --s 0.0001 --dataset cifar10 --arch vgg --depth 19
@@ -43,7 +43,7 @@ python main.py -sr --s 0.00001 --dataset cifar10 --arch resnet --depth 164
 python main.py -sr --s 0.00001 --dataset cifar10 --arch densenet --depth 40
 ```
 
-## Prune
+## 3. Prune
 
 ```shell
 python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 --model [PATH TO THE MODEL] --save [DIRECTORY TO STORE RESULT]
@@ -52,7 +52,7 @@ python denseprune.py --dataset cifar10 --depth 40 --percent 0.4 --model [PATH TO
 ```
 The pruned model will be named `pruned.pth.tar`.
 
-## Fine-tune
+## 4. Fine-tune
 
 ```shell
 python main.py --refine [PATH TO THE PRUNED MODEL] --dataset cifar10 --arch vgg --depth 19 --epochs 160

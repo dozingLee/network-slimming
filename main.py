@@ -15,11 +15,13 @@ import models
 '''
     main.py: Train model with dataset & Save best model
 
-    (1) Baseline: VGG19 for cifar10 (Best accuracy: 0.9391)
-    python main.py --dataset cifar10 --arch vgg --depth 19 --save ./logs/baseline_vgg19_cifar10
+    (1) Baseline: 
+    VGG19 for cifar10 (Best accuracy: 0.9391)
+    > python main.py --dataset cifar10 --arch vgg --depth 19 --save ./logs/baseline_vgg19_cifar10
 
-    (2) Sparsity: VGG19 for cifar10 & hyper-parameter sparsity 1e-4
-    python main.py -sr --s 0.0001 --dataset cifar10 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar10_s_1e-4
+    (2) Sparsity: 
+    VGG19 for cifar10 & hyper-parameter sparsity 1e-4 (Best accuracy: 0.9347)
+    > python main.py -sr --s 0.0001 --dataset cifar10 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar10_s_1e-4
     
     (3) Prune:
         VGG model references vggprune.py
@@ -27,7 +29,13 @@ import models
         DenseNet model references denseprune.py
     
     (4) Fine tune:
+    VGG19 with 50% proportion for cifar10 (Best accuracy: 0.9373)
+    > python main.py --refine ./logs/prune_vgg19_percent_0.5/pruned.pth.tar 
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_vgg19_percent_0.5
     
+    VGG19 with 70% proportion for cifar10 (Best accuracy: )
+    > python main.py --refine ./logs/prune_vgg19_percent_0.7/pruned.pth.tar 
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_vgg19_percent_0.7
 '''
 
 
@@ -55,23 +63,16 @@ parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                     help='SGD momentum (default: 0.9)')
 parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
-
-# ./logs/model_best_vggnet_93.86.pth.tar
-# ./logs/model_best.pth.tar
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=100, metavar='N',
                     help='how many batches to wait before logging training status')
-
-# ./logs
 parser.add_argument('--save', default='', type=str, metavar='PATH',
                     help='path to save prune model (default: current directory)')
-
 parser.add_argument('--arch', default='vgg', type=str, 
                     help='architecture to use (vgg, resnet, densenet)')
 parser.add_argument('--depth', default=19, type=int,
@@ -180,7 +181,7 @@ def train(epoch):
             updateBN()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.1f}%)]\tLoss: {:.6f}'.format(
+            print('Train Epoch: {} [{}/{} ({:.2f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item()))
 
@@ -200,7 +201,7 @@ def test():
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
     test_loss /= len(test_loader.dataset)
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.1f}%)\n'.format(
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
         test_loss, correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)))
     return correct / float(len(test_loader.dataset))

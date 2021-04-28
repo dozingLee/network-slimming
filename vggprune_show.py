@@ -1,4 +1,5 @@
 import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import argparse
 import numpy as np
 import torch
@@ -11,12 +12,15 @@ import warnings
 warnings.filterwarnings(action='once')
 
 '''
-    vggprune_show.py: VGG prune model's weight data show
+    vggprune_show.py: VGG sparsity model's weight data show
     
-    (1) VGG prunes 50% proportion with sparsity 1e-4 for cifar10
+    (1) VGG shows 50% proportion with sparsity 1e-4 for cifar10
     > python vggprune_show.py --dataset cifar10 --depth 19 --percent 0.5
-        --model ./logs/vggprune/model_best_vggnet_sr_93.78.pth.tar --save ./logs/vggprune/
+        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/sparsity_vgg19_cifar10_s_1e-4
     
+    (2) VGG shows 70% proportion with sparsity 1e-4 for cifar10
+    > python vggprune_show.py --dataset cifar10 --depth 19 --percent 0.7
+        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/sparsity_vgg19_cifar10_s_1e-4
     
 '''
 
@@ -97,12 +101,13 @@ for i in range(num_layer):
 
 # Plot settings
 colors = [plt.cm.tab10(i / float(num_layer - 1)) for i in range(num_layer)]
-plt.figure(figsize=(16, 10), dpi=80, facecolor='w', edgecolor='k')
+plt.figure(figsize=(18, 16), dpi=80, facecolor='w', edgecolor='k')
 point_size = 8
 font_size = 10
+title_font_size = 16
 
 
-plt.subplot(2, 1, 1)
+plt.subplot(3, 1, 1)
 
 # Weight data point
 for i, item in enumerate(scatter_list):
@@ -116,31 +121,47 @@ plt.plot(line_x, line_y, label='threshold')
 
 # Legend decorations 1
 y_lim_l, y_lim_r = 0.0, 1.0
-plt.gca().set(ylim=(y_lim_l, y_lim_r), xlabel='index', ylabel='weight data')
+plt.gca().set(ylim=(y_lim_l, y_lim_r), ylabel='Weight Data')
 plt.xticks(range(0, num_total, int(num_total/num_layer)), fontsize=font_size)
 plt.yticks(fontsize=font_size)
-plt.title("Scatterplot of Weight Data({}~{}) and Threshold({:.2e})".format(y_lim_l, y_lim_r, threshold), fontsize=22)
+plt.title("Scatter Weight Data({}~{:.2e}), Threshold({:.2e}) and Percent({})"
+          .format(y_lim_l, y_lim_r, threshold, args.percent), fontsize=title_font_size)
 plt.legend(fontsize=font_size, bbox_to_anchor=(1.02, 0), loc=3, borderaxespad=0)
 
+
 # Legend decorations 2
-plt.subplot(2, 1, 2)
-y_lim_l, y_lim_r = 0.0, 1e-6
+plt.subplot(3, 1, 2)
+threshold_rate = 5.0
+y_lim_l, y_lim_r = 0.0, threshold * threshold_rate
 channel_origin = [64, 64, 128, 128, 256, 256, 256, 256, 512, 512, 512, 512, 512, 512, 512, 512]  # vgg19 model
 channel_prune = [35, 64, 128, 128, 255, 251, 222, 180, 113, 46, 44, 34, 17, 21, 33, 80]  # prune.txt
-channel_variation = np.array(channel_origin) - np.array(channel_prune)
-channel_variation = list(channel_variation)
-labels = ["{:>3d}-{:>3d}={:>3d}".format(origin_item, channel_variation[i], channel_prune[i])
-          for i, origin_item in enumerate(channel_origin)]
-
+channel_variation = list(np.array(channel_origin) - np.array(channel_prune))
+labels = ["{:>3d} - {:>3d}".format(origin_item, channel_prune[i]) for i, origin_item in enumerate(channel_origin)]
 for i, bn_item in enumerate(scatter_list):
     plt.scatter(x=scatter_index_list[i], y=scatter_list[i],
                 s=point_size, c=colors[i], label=labels[i])
-plt.title("Scatterplot of Weight Data({}~{}) and Threshold({:.2e}) ".format(y_lim_l, y_lim_r, threshold), fontsize=22)
-plt.plot(line_x, line_y, label='threshold')
-plt.gca().set(ylim=(y_lim_l, y_lim_r), xlabel='Index', ylabel='Weight data')
+plt.title("Scatter Weight Data({}~{:.2e}) and Threshold({:.2e}) and Percent({}) "
+          .format(y_lim_l, y_lim_r, threshold, args.percent), fontsize=title_font_size)
+plt.plot(line_x, line_y, label='thres above')
+plt.gca().set(ylim=(y_lim_l, y_lim_r), ylabel='Weight Data')
 plt.legend(fontsize=font_size, bbox_to_anchor=(1.01, 0), loc=3, borderaxespad=0)
 
-plt.savefig(os.path.join(args.save, "vggprune_show.png"))
+
+# Legend decorations 3
+plt.subplot(3, 1, 3)
+threshold_rate = 1.1
+y_lim_l, y_lim_r = 0.0, threshold * threshold_rate
+labels = ["{:>3d} - {:>3d}".format(origin_item, channel_variation[i]) for i, origin_item in enumerate(channel_origin)]
+for i, bn_item in enumerate(scatter_list):
+    plt.scatter(x=scatter_index_list[i], y=scatter_list[i],
+                s=point_size, c=colors[i], label=labels[i])
+plt.title("Scatter Weight Data({}~{:.2e}) and Threshold({:.2e}) and Percent({}) "
+          .format(y_lim_l, y_lim_r, threshold, args.percent), fontsize=title_font_size)
+plt.plot(line_x, line_y, label='thres below')
+plt.gca().set(ylim=(y_lim_l, y_lim_r), ylabel='Weight Data')
+plt.legend(fontsize=font_size, bbox_to_anchor=(1.01, 0), loc=3, borderaxespad=0)
+
+plt.savefig(os.path.join(args.save, "vggprune_show_percent_{}.png".format(args.percent)))
 plt.show()
 
 # def encoder(data_i):

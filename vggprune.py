@@ -11,13 +11,18 @@ from models import *
 '''
     vggprune.py: Prune vgg model with sparsity & Save to the local
     
-    (1) Prune Sparsity VGG19 with 70% proportion for cifar10
+    (1) Prune Sparsity VGG19 with 70% proportion for cifar10 (Test accuracy: 19.17%)
     python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 
-        --model ./logs/baseline_vgg19_cifar10/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.7
+        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.7
     
-    (2) Prune Sparsity VGG19 with 50% proportion for cifar10
+    (2) Prune Sparsity VGG19 with 50% proportion for cifar10 (Test accuracy: 93.47%) !!!!
     python vggprune.py --dataset cifar10 --depth 19 --percent 0.5 
-        --model ./logs/baseline_vgg19_cifar10/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.5
+        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.5
+        
+    (3) Prune Sparsity VGG19 with 30% proportion for cifar10 (Test accuracy: 93.47%) !!!!
+    python vggprune.py --dataset cifar10 --depth 19 --percent 0.3 
+        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.3
+        
 
 '''
 
@@ -133,7 +138,7 @@ def test(model):
             pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
-    print('\nTest set: Accuracy: {}/{} ({:.1f}%)\n'.format(
+    print('\nTest set: Accuracy: {}/{} ({:.2f}%)\n'.format(
         correct, len(test_loader.dataset), 100. * correct / len(test_loader.dataset)))
     return correct / float(len(test_loader.dataset))
 
