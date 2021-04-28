@@ -7,10 +7,32 @@ from torch.autograd import Variable
 from torchvision import datasets, transforms
 from models import *
 
+'''
+    My simple idea: Pruned weight data with 'args.percent' proportion for every BN layer
+
+    Command: 
+    (1) Pruned best sparsity model with 0.7 for every BN layer at cifar10
+    python vggprune_layer.py --dataset cifar10 --depth 19 --percent 0.7 
+        --model ./logs/vggprune/model_best_vggnet_sr_93.78.pth.tar --save ./logs/vggprune_layer/0_7
+    
+    (2) Fine-tune vggprune_layer 0.7
+    python main.py --refine ./logs/vggprune_layer/0_7/pruned.pth.tar --dataset cifar10 
+        --arch vgg --depth 19 --epochs 160 --save ./logs/vggprune_layer/0_7
+    
+    (3) Pruned best sparsity model with 0.7 for every BN layer at cifar10
+    python vggprune_layer.py --dataset cifar10 --depth 19 --percent 0.7 
+        --model ./logs/vggprune/model_best_vggnet_sr_93.78.pth.tar --save ./logs/vggprune_layer/0_5
+    
+    (2) Fine-tune vggprune_layer 0.5
+    python main.py --refine ./logs/vggprune_layer/0_5/pruned.pth.tar --dataset cifar10 
+        --arch vgg --depth 19 --epochs 160 --save ./logs/vggprune_layer/0_5
+    
+'''
+
 
 # Prune settings
 parser = argparse.ArgumentParser(description='PyTorch Slimming CIFAR prune')
-parser.add_argument('--dataset', type=str, default='cifar10',
+parser.add_argument('--dataset', type=str, default='cifar100',
                     help='training dataset (default: cifar100)')
 parser.add_argument('--test-batch-size', type=int, default=256, metavar='N',
                     help='input batch size for testing (default: 256)')
@@ -20,12 +42,12 @@ parser.add_argument('--depth', type=int, default=19,
                     help='depth of the vgg')
 parser.add_argument('--percent', type=float, default=0.5,
                     help='scale sparse rate (default: 0.5)')
-parser.add_argument('--model', default='./logs/model_best_vggnet_sr_93.78.pth.tar', type=str, metavar='PATH',
-                    help='path to the model (default: none)')
-# Cifar10 VGG19 percent 0.7 ./logs/model_best_vggnet_sr_93.78.pth.tar
-# Cifar10 VGG19 percent 0.5 ./logs/vggprune2/model_best.pth.tar
 
-parser.add_argument('--save', default='./logs/vggprune1.5', type=str, metavar='PATH',
+# sparsity train bset model vgg19 cifar10 ./logs/model_best_vggnet_sr_93.78.pth.tar
+parser.add_argument('--model', default='', type=str, metavar='PATH',
+                    help='path to the model (default: none)')
+
+parser.add_argument('--save', default='', type=str, metavar='PATH',
                     help='path to save pruned model (default: none)')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -58,27 +80,33 @@ for m in model.modules():
         total += m.weight.data.shape[0]
 
 # Array of BatchNorm2d.weight
-bn = torch.zeros(total)
-index = 0
-for m in model.modules():
-    if isinstance(m, nn.BatchNorm2d):
-        size = m.weight.data.shape[0]
-        bn[index:(index+size)] = m.weight.data.abs().clone()
-        index += size
+# bn = torch.zeros(total)
+# index = 0
+# for m in model.modules():
+#     if isinstance(m, nn.BatchNorm2d):
+#         size = m.weight.data.shape[0]
+#         bn[index:(index+size)] = m.weight.data.abs().clone()
+#         index += size
+#
+# # Threshold
+# y, i = torch.sort(bn)   # descending order, y: sort list, i: index list
+# thre_index = int(total * args.percent)  # threshold index
+# thre = y[thre_index]  # threshold value
 
-# Threshold
-y, i = torch.sort(bn)   # descending order, y: sort list, i: index list
-thre_index = int(total * args.percent)  # threshold index
-thre = y[thre_index]  # threshold value
 
-# Pruned
+# Pruned weight data with 'args.percent' proportion for every BN layer
 pruned = 0
 cfg = []
 cfg_mask = []
 for k, m in enumerate(model.modules()):
     if isinstance(m, nn.BatchNorm2d):
-        weight_copy = m.weight.data.abs().clone()
-        mask = weight_copy.gt(thre).float().cuda()  # if value > threshold, True, else False
+        size = m.weight.data.shape[0]  # number of weights
+        weight_copy = m.weight.data.abs().clone()  # copy of weights
+        value, index = torch.sort(weight_copy)
+        threshold_index = int(size * args.percent)
+        threshold = value[threshold_index]
+
+        mask = weight_copy.gt(threshold).float().cuda()  # if value > threshold, True, else False
         pruned = pruned + mask.shape[0] - torch.sum(mask)  # Num of pruned
         m.weight.data.mul_(mask)  # pruned weight
         m.bias.data.mul_(mask)    # pruned bias
@@ -144,8 +172,8 @@ if __name__ == '__main__':
         fp.write("Test accuracy: \n" + str(acc))
 
     layer_id_in_cfg = 0
-    start_mask = torch.ones(3)  # 初始为三通道
-    end_mask = cfg_mask[layer_id_in_cfg]  # 第一层掩码，即下一层的输出，下下一层的输入
+    start_mask = torch.ones(3)
+    end_mask = cfg_mask[layer_id_in_cfg]
     for [m0, m1] in zip(model.modules(), newmodel.modules()):
         if isinstance(m0, nn.BatchNorm2d):
             idx1 = np.squeeze(np.argwhere(np.asarray(end_mask.cpu().numpy())))
@@ -182,6 +210,3 @@ if __name__ == '__main__':
     print(newmodel)
     model = newmodel
     test(model)
-
-# python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 --model ./logs/model_best_vggnet_sr_93.78.pth.tar --save ./logs/vggprune
-# python main.py --refine ./logs/pruned.pth.tar --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs

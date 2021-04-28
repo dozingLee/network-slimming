@@ -14,12 +14,12 @@ import models
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch Slimming CIFAR training')
-parser.add_argument('--dataset', type=str, default='cifar100',
+parser.add_argument('--dataset', type=str, default='cifar10',
                     help='training dataset (default: cifar100)')
 parser.add_argument('--sparsity-regularization', '-sr', dest='sr', action='store_true',
-                    help='train with channel sparsity regularization')
+                    help='train with channel sparsity regularization')  # Run sparsity regularization
 parser.add_argument('--s', type=float, default=0.0001,
-                    help='scale sparse rate (default: 0.0001)')
+                    help='scale sparse rate (default: 0.0001)')         # Hyper-parameter sparsity (default 1e-4)
 parser.add_argument('--refine', default='', type=str, metavar='PATH',
                     help='path to the pruned model to be fine tuned')
 parser.add_argument('--batch-size', type=int, default=64, metavar='N',
@@ -36,8 +36,8 @@ parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                     help='SGD momentum (default: 0.9)')
 parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
-parser.add_argument('--resume', default='', type=str, metavar='PATH',
-                    help='path to latest checkpoint (default: none)')
+parser.add_argument('--resume', default='./logs/model_best_vggnet_93.86.pth.tar', type=str, metavar='PATH',
+                    help='path to latest checkpoint (default: none)')  # ./logs/model_best.pth.tar
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -45,7 +45,7 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
 parser.add_argument('--log-interval', type=int, default=100, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--save', default='./logs', type=str, metavar='PATH',
-                    help='path to save prune model (default: current directory)')
+                    help='path to save prune model (default: current directory)')  # ./logs
 parser.add_argument('--arch', default='vgg', type=str, 
                     help='architecture to use')
 parser.add_argument('--depth', default=19, type=int,
@@ -136,7 +136,7 @@ if args.resume:
 def updateBN():
     for m in model.modules():
         if isinstance(m, nn.BatchNorm2d):
-            m.weight.grad.data.add_(args.s*torch.sign(m.weight.data))  # L1
+            m.weight.grad.data.add_(args.s * torch.sign(m.weight.data))  # 稀疏度惩罚项
 
 
 def train(epoch):
@@ -204,3 +204,7 @@ if __name__ == '__main__':
         }, is_best, filepath=args.save)
 
     print("Best accuracy: " + str(best_prec1))
+
+
+# python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 --model ./logs/model_best_vggnet_sr_93.78.pth.tar --save ./logs/vggprune
+# python main.py --refine ./logs/pruned.pth.tar --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs
