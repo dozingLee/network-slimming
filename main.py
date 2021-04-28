@@ -12,10 +12,22 @@ from torch.autograd import Variable
 import models
 
 
+'''
+    main.py: Train model with dataset & Save best model
+
+    (1) Baseline cifar10 vgg19
+    python main.py --dataset cifar10 --arch vgg --depth 19 --save ./logs/baseline_vgg19_cifar10
+
+    (2) Baseline cifar10 resnet
+    python main.py --dataset cifar10 --arch resnet --depth 164 --save ./logs/baseline_resnet164_cifar10
+    
+'''
+
+
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch Slimming CIFAR training')
 parser.add_argument('--dataset', type=str, default='cifar10',
-                    help='training dataset (default: cifar100)')
+                    help='training dataset (default: cifar10)')
 parser.add_argument('--sparsity-regularization', '-sr', dest='sr', action='store_true',
                     help='train with channel sparsity regularization')  # Run sparsity regularization
 parser.add_argument('--s', type=float, default=0.0001,
@@ -36,18 +48,25 @@ parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                     help='SGD momentum (default: 0.9)')
 parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
-parser.add_argument('--resume', default='./logs/model_best_vggnet_93.86.pth.tar', type=str, metavar='PATH',
-                    help='path to latest checkpoint (default: none)')  # ./logs/model_best.pth.tar
+
+# ./logs/model_best_vggnet_93.86.pth.tar
+# ./logs/model_best.pth.tar
+parser.add_argument('--resume', default='', type=str, metavar='PATH',
+                    help='path to latest checkpoint (default: none)')
+
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=100, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--save', default='./logs', type=str, metavar='PATH',
-                    help='path to save prune model (default: current directory)')  # ./logs
+
+# ./logs
+parser.add_argument('--save', default='', type=str, metavar='PATH',
+                    help='path to save prune model (default: current directory)')
+
 parser.add_argument('--arch', default='vgg', type=str, 
-                    help='architecture to use')
+                    help='architecture to use (vgg, resnet, densenet)')
 parser.add_argument('--depth', default=19, type=int,
                     help='depth of the neural network')
 
