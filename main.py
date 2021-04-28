@@ -15,11 +15,18 @@ import models
 '''
     main.py: Train model with dataset & Save best model
 
-    (1) Baseline cifar10 vgg19
+    (1) Baseline: VGG19 for cifar10 (Best accuracy: 0.9391)
     python main.py --dataset cifar10 --arch vgg --depth 19 --save ./logs/baseline_vgg19_cifar10
 
-    (2) Baseline cifar10 resnet
-    python main.py --dataset cifar10 --arch resnet --depth 164 --save ./logs/baseline_resnet164_cifar10
+    (2) Sparsity: VGG19 for cifar10 & hyper-parameter sparsity 1e-4
+    python main.py -sr --s 0.0001 --dataset cifar10 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar10_s_1e-4
+    
+    (3) Prune:
+        VGG model references vggprune.py
+        ResNet model references resprune.py
+        DenseNet model references denseprune.py
+    
+    (4) Fine tune:
     
 '''
 

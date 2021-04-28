@@ -8,10 +8,23 @@ from torchvision import datasets, transforms
 from models import *
 
 
+'''
+    vggprune.py: Prune vgg model with sparsity & Save to the local
+    
+    (1) Prune Sparsity VGG19 with 70% proportion for cifar10
+    python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 
+        --model ./logs/baseline_vgg19_cifar10/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.7
+    
+    (2) Prune Sparsity VGG19 with 50% proportion for cifar10
+    python vggprune.py --dataset cifar10 --depth 19 --percent 0.5 
+        --model ./logs/baseline_vgg19_cifar10/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.5
+
+'''
+
 # Prune settings
 parser = argparse.ArgumentParser(description='PyTorch Slimming CIFAR prune')
 parser.add_argument('--dataset', type=str, default='cifar10',
-                    help='training dataset (default: cifar100)')
+                    help='training dataset (default: cifar10)')
 parser.add_argument('--test-batch-size', type=int, default=256, metavar='N',
                     help='input batch size for testing (default: 256)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
@@ -20,12 +33,9 @@ parser.add_argument('--depth', type=int, default=19,
                     help='depth of the vgg')
 parser.add_argument('--percent', type=float, default=0.5,
                     help='scale sparse rate (default: 0.5)')
-parser.add_argument('--model', default='./logs/model_best_vggnet_sr_93.78.pth.tar', type=str, metavar='PATH',
+parser.add_argument('--model', default='', type=str, metavar='PATH',
                     help='path to the model (default: none)')
-# Cifar10 VGG19 percent 0.7 ./logs/model_best_vggnet_sr_93.78.pth.tar
-# Cifar10 VGG19 percent 0.5 ./logs/vggprune2/model_best.pth.tar
-
-parser.add_argument('--save', default='./logs/vggprune1.5', type=str, metavar='PATH',
+parser.add_argument('--save', default='', type=str, metavar='PATH',
                     help='path to save pruned model (default: none)')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -113,11 +123,12 @@ def test(model):
         raise ValueError("No valid dataset is given.")
     model.eval()
     correct = 0
-    with torch.no_grad():
-        for data, target in test_loader:
-            if args.cuda:
-                data, target = data.cuda(), target.cuda()
-            data, target = Variable(data, volatile=True), Variable(target)
+
+    for data, target in test_loader:
+        if args.cuda:
+            data, target = data.cuda(), target.cuda()
+        with torch.no_grad():
+            data, target = Variable(data), Variable(target)
             output = model(data)
             pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
