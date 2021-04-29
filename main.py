@@ -18,6 +18,12 @@ import models
     (1) Baseline: 
     VGG19 for cifar10 (Best accuracy: 0.9391)
     > python main.py --dataset cifar10 --arch vgg --depth 19 --save ./logs/baseline_vgg19_cifar10
+    
+    VGG19 for cifar100 (Best accuracy: 0.7255)
+    > python main.py --dataset cifar100 --arch vgg --depth 19 --save ./logs/baseline_vgg19_cifar100
+    
+    ResNet for cifar10 (Best accuracy: 0.9507)
+    > python main.py --dataset cifar10 --arch resnet --depth 164 --save ./logs/baseline_resnet164_cifar10
 
     (2) Sparsity: 
     VGG19 for cifar10 & hyper-parameter sparsity 1e-4 (Best accuracy: 0.9347)
@@ -33,9 +39,11 @@ import models
     > python main.py --refine ./logs/prune_vgg19_percent_0.5/pruned.pth.tar 
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_vgg19_percent_0.5
     
-    VGG19 with 70% proportion for cifar10 (Best accuracy: )
+    VGG19 with 70% proportion for cifar10 (Best accuracy: 0.9402)
     > python main.py --refine ./logs/prune_vgg19_percent_0.7/pruned.pth.tar 
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_vgg19_percent_0.7
+        
+        
 '''
 
 
@@ -56,7 +64,7 @@ parser.add_argument('--test-batch-size', type=int, default=256, metavar='N',
 parser.add_argument('--epochs', type=int, default=160, metavar='N',
                     help='number of epochs to train (default: 160)')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
-                    help='manual epoch number (useful on restarts)')
+                    help='  epoch number (useful on restarts)')
 parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
                     help='learning rate (default: 0.1)')
 parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
