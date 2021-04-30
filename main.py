@@ -35,15 +35,23 @@ import models
         DenseNet model references denseprune.py
     
     (4) Fine tune:
-    VGG19 with 50% proportion for cifar10 (Best accuracy: 0.9373)
+    Batch Normalization: VGG19 with 50% proportion for cifar10 (Best accuracy: 0.9373)
     > python main.py --refine ./logs/prune_vgg19_percent_0.5/pruned.pth.tar 
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_vgg19_percent_0.5
     
-    VGG19 with 70% proportion for cifar10 (Best accuracy: 0.9402)
+    Attention Transfer: VGG19 with 50% proportion for cifar10 (Best accuracy: 0.9379)
+     > python main.py --refine ./logs/attention_prune_vgg19_percent_0.5/pruned.pth.tar 
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_vgg19_percent_0.5
+
+    Batch Normalization: VGG19 with 70% proportion for cifar10 (Best accuracy: 0.9402)
     > python main.py --refine ./logs/prune_vgg19_percent_0.7/pruned.pth.tar 
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_vgg19_percent_0.7
         
-        
+    Attention Transfer: VGG19 with 70% proportion for cifar10 (Best accuracy: 0.9259)
+     > python main.py --refine ./logs/attention_prune_vgg19_percent_0.7/pruned.pth.tar 
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_vgg19_percent_0.7
+    
+    
 '''
 
 

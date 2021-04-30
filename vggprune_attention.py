@@ -7,13 +7,12 @@ from torch.autograd import Variable
 from torchvision import datasets, transforms
 from models import *
 
-
 '''
     vggprune.py: Prune vgg model with sparsity & Save to the local
     
-    (1) Prune Sparsity VGG19 with 70% proportion for cifar10 (Test accuracy: 19.17%)
-    python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 
-        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.7
+    (1) Prune Sparsity VGG19 with 70% proportion for cifar10 (Test accuracy: 19.17%) 12.96
+    python vggprune_attention.py --dataset cifar10 --depth 19 --percent 0.7 
+        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_vgg19_percent_0.7
     
     (2) Prune Sparsity VGG19 with 50% proportion for cifar10 (Test accuracy: 93.47%) !!!!
     python vggprune.py --dataset cifar10 --depth 19 --percent 0.5 
@@ -40,7 +39,7 @@ parser.add_argument('--percent', type=float, default=0.5,
                     help='scale sparse rate (default: 0.5)')
 parser.add_argument('--model', default='./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar', type=str, metavar='PATH',
                     help='path to the model (default: none)')
-parser.add_argument('--save', default='./logs/prune_vgg19_percent_0.3', type=str, metavar='PATH',
+parser.add_argument('--save', default='./logs/attention_prune_vgg19_percent_0.5', type=str, metavar='PATH',
                     help='path to save pruned model (default: none)')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -66,45 +65,98 @@ if args.model:
 
 print(model)
 
-# Number of BatchNorm2d.weight
-total = 0
+# Number of Conv2d.weight
+num_total = 0
 for m in model.modules():
-    if isinstance(m, nn.BatchNorm2d):
-        total += m.weight.data.shape[0]
+    if isinstance(m, nn.Conv2d):
+        num_total += m.weight.data.shape[0]
 
-# Array of BatchNorm2d.weight
-bn = torch.zeros(total)
+# Gamma list of Conv2d.weight
+gamma_list = torch.zeros(num_total)
 index = 0
-for m in model.modules():
-    if isinstance(m, nn.BatchNorm2d):
+
+'''
+    Attention Transfer
+
+    1. Conv2d's weight data
+        weight data: [Nout, Nin, kernel_size[0], kernel_size[1]]
+    2. Resize and absolute
+        Nout = C, Nin = H, kernel_size[0] * kernel_size[1] = W
+        A = [C, H, W]
+    3. Sum of values along the channel direction
+    4. Square of two norm
+    5. Normalize weight data
+    6. Pruning standard
+
+'''
+
+
+def conv2d_gramma(weight_data):
+    # 1. weight data
+    d1, d2, _, _ = weight_data.shape
+
+    # 2. A: resize and absolute
+    A = weight_data.view(d1, d2, -1).abs()
+    c, h, w = A.shape
+
+    # 3. F(A): sum of values along the channel direction
+    FA = torch.zeros(h, w).cuda()
+    for i in range(c):
+        FA.add_(A[i])
+
+    # 4. ||F(A)||^2: square of two norm
+    FA_s = torch.linalg.norm(FA)
+
+    # 5. F(A) / ||F(A)||^2: normalize weight data
+    F_all = FA / FA_s
+
+    # 6. F(Aj) / ||F(Aj)||^2 & gamma = ∑ | F(A)/||F(A)||^2 - F(Aj)/||F(Aj)||^2 |: pruning standard
+    gammas = torch.zeros(c)
+    for j in range(c):
+        Aj = A[j]
+        FAj = FA - Aj
+        FAj_s = torch.linalg.norm(FAj)
+        Fj = FAj / FAj_s
+        gamma_j = (F_all - Fj).abs().sum()
+        gammas[j] = gamma_j
+
+    return gammas
+
+
+# Weight
+for k, m in enumerate(model.modules()):
+    if isinstance(m, nn.Conv2d):
+        gammas = conv2d_gramma(m.weight.data.clone())
         size = m.weight.data.shape[0]
-        bn[index:(index+size)] = m.weight.data.abs().clone()
+        gamma_list[index:(index + size)] = gammas.clone()
         index += size
 
 # Threshold
-y, i = torch.sort(bn)   # descending order, y: sort list, i: index list
-thre_index = int(total * args.percent)  # threshold index
+y, i = torch.sort(gamma_list)  # descending order, y: sort list, i: index list
+thre_index = int(num_total * args.percent)  # threshold index
 thre = y[thre_index]  # threshold value
 
-# Pruned
+# Prune
 pruned = 0
 cfg = []
 cfg_mask = []
 for k, m in enumerate(model.modules()):
-    if isinstance(m, nn.BatchNorm2d):
-        weight_copy = m.weight.data.abs().clone()
-        mask = weight_copy.gt(thre).float().cuda()  # if value > threshold, True, else False
+    if isinstance(m, nn.Conv2d):
+        gamma_list = conv2d_gramma(m.weight.data.clone())
+        mask = gamma_list.gt(thre).float().cuda()  # if value > threshold, True, else False
         pruned = pruned + mask.shape[0] - torch.sum(mask)  # Num of pruned
-        m.weight.data.mul_(mask)  # pruned weight
-        m.bias.data.mul_(mask)    # pruned bias
         cfg.append(int(torch.sum(mask)))
         cfg_mask.append(mask.clone())
         print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
             format(k, mask.shape[0], int(torch.sum(mask))))
+    elif isinstance(m, nn.BatchNorm2d):
+        mask = cfg_mask[len(cfg_mask) - 1]
+        m.weight.data.mul_(mask)  # pruned weight
+        m.bias.data.mul_(mask)  # pruned bias
     elif isinstance(m, nn.MaxPool2d):
         cfg.append('M')
 
-pruned_ratio = pruned/total
+pruned_ratio = pruned / num_total
 
 print('Pre-processing Successful! Pruned ratio: ', pruned_ratio)
 
@@ -186,7 +238,6 @@ if __name__ == '__main__':
             w1 = m0.weight.data[:, idx0.tolist(), :, :].clone()
             w1 = w1[idx1.tolist(), :, :, :].clone()
             m1.weight.data = w1.clone()
-
         elif isinstance(m0, nn.Linear):
             idx0 = np.squeeze(np.argwhere(np.asarray(start_mask.cpu().numpy())))
             if idx0.size == 1:

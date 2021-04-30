@@ -29,6 +29,11 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
     > python vggprune_show.py --dataset cifar10 --depth 19 --percent 0.7
         --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/sparsity_vgg19_cifar10_s_1e-4
     
+    (3) Prune
+    VGG19 with 50% proportion for cifar10
+    > python vggprune_show.py --dataset cifar10 --depth 19 --percent 0.7
+        --model ./logs/prune_vgg19_percent_0.5/prune.pth.tar --save ./logs/prune_vgg19_percent_0.5
+    
      
 '''
 
