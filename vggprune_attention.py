@@ -37,9 +37,9 @@ parser.add_argument('--depth', type=int, default=19,
                     help='depth of the vgg')
 parser.add_argument('--percent', type=float, default=0.5,
                     help='scale sparse rate (default: 0.5)')
-parser.add_argument('--model', default='./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar', type=str, metavar='PATH',
+parser.add_argument('--model', default='', type=str, metavar='PATH',
                     help='path to the model (default: none)')
-parser.add_argument('--save', default='./logs/attention_prune_vgg19_percent_0.5', type=str, metavar='PATH',
+parser.add_argument('--save', default='', type=str, metavar='PATH',
                     help='path to save pruned model (default: none)')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -92,25 +92,23 @@ index = 0
 
 
 def conv2d_gramma(weight_data):
-    # 1. weight data
-    d1, d2, _, _ = weight_data.shape
-
-    # 2. A: resize and absolute
+    # 1. A: resize and absolute
+    d1, d2 = weight_data.shape[0], weight_data.shape[1]
     A = weight_data.view(d1, d2, -1).abs()
     c, h, w = A.shape
 
-    # 3. F(A): sum of values along the channel direction
+    # 2. F(A): sum of values along the channel direction
     FA = torch.zeros(h, w).cuda()
     for i in range(c):
         FA.add_(A[i])
 
-    # 4. ||F(A)||^2: square of two norm
+    # 3. ||F(A)||^2: square of two norm
     FA_s = torch.linalg.norm(FA)
 
-    # 5. F(A) / ||F(A)||^2: normalize weight data
+    # 4. F(A) / ||F(A)||^2: normalize weight data
     F_all = FA / FA_s
 
-    # 6. F(Aj) / ||F(Aj)||^2 & gamma = ∑ | F(A)/||F(A)||^2 - F(Aj)/||F(Aj)||^2 |: pruning standard
+    # 5. F(Aj) / ||F(Aj)||^2 & gamma = ∑ | F(A)/||F(A)||^2 - F(Aj)/||F(Aj)||^2 |: pruning standard
     gammas = torch.zeros(c)
     for j in range(c):
         Aj = A[j]
@@ -143,7 +141,7 @@ cfg_mask = []
 for k, m in enumerate(model.modules()):
     if isinstance(m, nn.Conv2d):
         gamma_list = conv2d_gramma(m.weight.data.clone())
-        mask = gamma_list.gt(thre).float().cuda()  # if value > threshold, True, else False
+        mask = gamma_list.gt(thre).float().cuda()  # if value > threshold: value else 0
         pruned = pruned + mask.shape[0] - torch.sum(mask)  # Num of pruned
         cfg.append(int(torch.sum(mask)))
         cfg_mask.append(mask.clone())
@@ -196,13 +194,14 @@ def test(model):
 
 
 if __name__ == '__main__':
+    # original model
     acc = test(model)
 
-    # Make real prune
-    print(cfg)
+    # new model
     newmodel = vgg(dataset=args.dataset, cfg=cfg)
     if args.cuda:
         newmodel.cuda()
+    print(cfg)
 
     num_parameters = sum([param.nelement() for param in newmodel.parameters()])
     savepath = os.path.join(args.save, "prune.txt")
@@ -212,8 +211,8 @@ if __name__ == '__main__':
         fp.write("Test accuracy: \n" + str(acc))
 
     layer_id_in_cfg = 0
-    start_mask = torch.ones(3)  # 初始为三通道
-    end_mask = cfg_mask[layer_id_in_cfg]  # 第一层掩码，即下一层的输出，下下一层的输入
+    start_mask = torch.ones(3)  # initially three channels
+    end_mask = cfg_mask[layer_id_in_cfg]  # the first mask in the output of the next layer (the input of next layer)
     for [m0, m1] in zip(model.modules(), newmodel.modules()):
         if isinstance(m0, nn.BatchNorm2d):
             idx1 = np.squeeze(np.argwhere(np.asarray(end_mask.cpu().numpy())))
@@ -221,18 +220,18 @@ if __name__ == '__main__':
                 idx1 = np.resize(idx1, (1,))
             m1.weight.data = m0.weight.data[idx1.tolist()].clone()
             m1.bias.data = m0.bias.data[idx1.tolist()].clone()
-            m1.running_mean = m0.running_mean[idx1.tolist()].clone()
-            m1.running_var = m0.running_var[idx1.tolist()].clone()
-            layer_id_in_cfg += 1
-            start_mask = end_mask.clone()
-            if layer_id_in_cfg < len(cfg_mask):  # do not change in Final FC
-                end_mask = cfg_mask[layer_id_in_cfg]
+            m1.running_mean = m0.running_mean[idx1.tolist()].clone()  # Calculate the average of the data so far
+            m1.running_var = m0.running_var[idx1.tolist()].clone()    # Calculate the variance of the data so far
+            layer_id_in_cfg += 1  # next cfg
+            start_mask = end_mask.clone()  # next start mask
+            if layer_id_in_cfg < len(cfg_mask):
+                end_mask = cfg_mask[layer_id_in_cfg]  # next end mask
         elif isinstance(m0, nn.Conv2d):
             idx0 = np.squeeze(np.argwhere(np.asarray(start_mask.cpu().numpy())))
             idx1 = np.squeeze(np.argwhere(np.asarray(end_mask.cpu().numpy())))
             print('In shape: {:d}, Out shape {:d}.'.format(idx0.size, idx1.size))
             if idx0.size == 1:
-                idx0 = np.resize(idx0, (1,))
+                idx0 = np.resize(idx0, (1,))  # shape: () convert to (1,)
             if idx1.size == 1:
                 idx1 = np.resize(idx1, (1,))
             w1 = m0.weight.data[:, idx0.tolist(), :, :].clone()
@@ -250,6 +249,3 @@ if __name__ == '__main__':
     print(newmodel)
     model = newmodel
     test(model)
-
-# python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 --model ./logs/model_best_vggnet_sr_93.78.pth.tar --save ./logs/vggprune
-# python main.py --refine ./logs/pruned.pth.tar --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs
