@@ -8,20 +8,26 @@ from torchvision import datasets, transforms
 from models import *
 
 '''
-    vggprune.py: Prune vgg model with sparsity & Save to the local
+    vggprune_attention_feature.py: Prune VGG19 CIFAR10 Feature by attention-based method
     
-    (1) Prune Sparsity VGG19 with 70% proportion for cifar10 (Test accuracy: 19.17%) 12.96
-    python vggprune_attention.py --dataset cifar10 --depth 19 --percent 0.7 
-        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_vgg19_percent_0.7
+    Baseline
+    (1) Prune VGG19 with 70% proportion for cifar10 (Test accuracy: -)
+    python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.7 
+        --model ./logs/baseline_vgg19_cifar10/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_percent_0.7
+     
+    (2) Prune VGG19 with 50% proportion for cifar10 (Test accuracy: 10.00%)
+    python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.5
+        --model ./logs/baseline_vgg19_cifar10/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_percent_0.5
+        
     
-    (2) Prune Sparsity VGG19 with 50% proportion for cifar10 (Test accuracy: 93.47%) !!!!
-    python vggprune.py --dataset cifar10 --depth 19 --percent 0.5 
-        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.5
-        
-    (3) Prune Sparsity VGG19 with 30% proportion for cifar10 (Test accuracy: 93.47%) !!!!
-    python vggprune.py --dataset cifar10 --depth 19 --percent 0.3 
-        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.3
-        
+    Sparsity
+    (1) Prune Sparsity VGG19 with 70% proportion for cifar10 (Test accuracy: -)
+    python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.7
+        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_sr_percent_0.7
+    
+    (2) Prune Sparsity VGG19 with 50% proportion for cifar10 (Test accuracy: 92.76%)
+    python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.5
+        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_sr_percent_0.5
 
 '''
 
@@ -52,6 +58,7 @@ model = vgg(dataset=args.dataset, depth=args.depth)
 if args.cuda:
     model.cuda()
 
+best_prec1 = 0.
 if args.model:
     if os.path.isfile(args.model):
         print("=> loading checkpoint '{}'".format(args.model))
@@ -63,24 +70,7 @@ if args.model:
               .format(args.model, checkpoint['epoch'], best_prec1))
     else:
         print("=> no checkpoint found at '{}'".format(args.model))
-print('Origin model: \r\n', model)
-
-# Dataset
-kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
-if args.dataset == 'cifar10':
-    test_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10('./data.cifar10', train=False, transform=transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
-        batch_size=args.test_batch_size, shuffle=True, **kwargs)
-elif args.dataset == 'cifar100':
-    test_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR100('./data.cifar100', train=False, transform=transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
-        batch_size=args.test_batch_size, shuffle=True, **kwargs)
-else:
-    raise ValueError("No valid dataset is given.")
+    # print('Origin model: \r\n', model)
 
 # Algorithm
 def attention_based_gramma(weight_data):
@@ -112,66 +102,30 @@ def attention_based_gramma(weight_data):
 
     return gammas
 
-# one batch of Dataset
-idx, data_item = next(enumerate(test_loader))
-data1 = data_item[0][0].clone().unsqueeze(0)  # [1, 3, 32, 32]
-if args.cuda:
-    data1 = data1.cuda()
 
+def get_dataloader():
+    kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
+    if args.dataset == 'cifar10':
+        test_loader = torch.utils.data.DataLoader(
+            datasets.CIFAR10('./data.cifar10', train=False, transform=transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
+            batch_size=args.test_batch_size, shuffle=True, **kwargs)
+        return test_loader
+    elif args.dataset == 'cifar100':
+        test_loader = torch.utils.data.DataLoader(
+            datasets.CIFAR100('./data.cifar100', train=False, transform=transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
+            batch_size=args.test_batch_size, shuffle=True, **kwargs)
+        return test_loader
+    else:
+        raise ValueError("No valid dataset is given.")
 
-# Process
-# number of channels
-num_total = 0
-for m in model.modules():
-    if isinstance(m, nn.BatchNorm2d):
-        num_total += m.weight.data.shape[0]
-gamma_list = torch.zeros(num_total)
-
-# all channels' gamma
-one_batch = data1.clone()
-index = 0
-for idx, m in enumerate(model.features):
-    one_batch = m(one_batch)
-    if isinstance(m, nn.ReLU):
-        value = one_batch.clone().squeeze(0)
-        size = value.shape[0]
-        gammas = attention_based_gramma(value)
-        gamma_list[index:(index+size)] = gammas.clone()
-        index += size
-
-# threshold
-y, i = torch.sort(gamma_list)
-thre_idx = int(num_total * args.percent)
-thre = gamma_list[thre_idx]
-
-# Pruned
-num_pruned = 0
-cfg = []
-cfg_mask = []
-one_batch = data1.clone()
-for k, m in enumerate(model.modules()):
-    one_batch = m(one_batch)
-    if isinstance(m, nn.BatchNorm2d):
-        value = nn.ReLU(one_batch.clone())
-        mask = value.gt(thre).float().cuda()
-        num_pruned += mask.shape[0] - torch.sum(mask)
-        m.weight.data.mul_(mask)
-        m.bias.data.mul_(mask)
-        cfg.append(int(torch.sum(mask)))
-        cfg_mask.append(mask.clone())
-        print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
-            format(k, mask.shape[0], int(torch.sum(mask))))
-    elif isinstance(m, nn.MaxPool2d):
-        cfg.append('M')
-
-pruned_ratio = num_pruned / num_total
-print('Pre-processing Successful! Pruned ratio: ', pruned_ratio)
-
-
-def test(model, dataloader):
+def test(model, test_loader):
     model.eval()
     correct = 0
-    for data, target in dataloader:
+    for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         with torch.no_grad():
@@ -185,7 +139,67 @@ def test(model, dataloader):
     return correct / float(len(test_loader.dataset))
 
 
+
+
 if __name__ == '__main__':
+    test_loader = get_dataloader()
+    relu = torch.nn.ReLU()
+
+    # one batch of Dataset
+    idx, data_item = next(enumerate(test_loader))
+    data1 = data_item[0][0].clone().unsqueeze(0)  # [1, 3, 32, 32]
+    if args.cuda:
+        data1 = data1.cuda()
+
+    # Process
+    # number of channels
+    num_total = 0
+    for m in model.modules():
+        if isinstance(m, nn.BatchNorm2d):
+            num_total += m.weight.data.shape[0]
+    gamma_list = torch.zeros(num_total)
+
+    # all channels' gamma
+    one_batch = data1.clone()
+    index = 0
+    for idx, m in enumerate(model.feature):
+        one_batch = m(one_batch)
+        if isinstance(m, nn.ReLU):
+            value = relu(one_batch.clone().squeeze(0))
+            size = value.shape[0]
+            gammas = attention_based_gramma(value)
+            gamma_list[index:(index+size)] = gammas.clone()
+            index += size
+
+    # threshold
+    y, i = torch.sort(gamma_list)
+    thre_idx = int(num_total * args.percent)
+    thre = y[thre_idx]
+
+    # Pruned
+    num_pruned = 0
+    cfg = []
+    cfg_mask = []
+    one_batch = data1.clone()
+    for k, m in enumerate(model.feature):
+        one_batch = m(one_batch)
+        if isinstance(m, nn.BatchNorm2d):
+            value = relu(one_batch.clone().squeeze(0))
+            gammas = attention_based_gramma(value)
+            mask = gammas.gt(thre).float().cuda()
+            m.weight.data.mul_(mask)
+            m.bias.data.mul_(mask)
+            cfg.append(int(torch.sum(mask)))
+            cfg_mask.append(mask.clone())
+            num_pruned += mask.shape[0] - torch.sum(mask)
+            print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
+                  format(k, mask.shape[0], int(torch.sum(mask))))
+        elif isinstance(m, nn.MaxPool2d):
+            cfg.append('M')
+
+    pruned_ratio = num_pruned / num_total
+    print('Pre-processing Successful! Pruned ratio: ', pruned_ratio)
+
     acc = test(model, test_loader)
 
     # new model
@@ -197,9 +211,11 @@ if __name__ == '__main__':
     num_parameters = sum([param.nelement() for param in newmodel.parameters()])
     savepath = os.path.join(args.save, "prune.txt")
     with open(savepath, "w") as fp:
-        fp.write("Configuration: \n" + str(cfg) + "\n")
-        fp.write("Number of parameters: \n" + str(num_parameters) + "\n")
-        fp.write("Test accuracy: \n" + str(acc))
+        fp.write("Configuration: \n{}\n".format(cfg))
+        fp.write("Prune ratio: {:.4f}\n".format(pruned_ratio))
+        fp.write("Number of parameters: {}\n".format(num_parameters))
+        fp.write("Origin Model accuracy: {:.4f}\n".format(best_prec1))
+        fp.write("Test Pruned Model accuracy: {:.4f}".format(acc))
 
     layer_id_in_cfg = 0
     start_mask = torch.ones(3)  # initially three channels

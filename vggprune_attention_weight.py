@@ -10,11 +10,23 @@ from models import *
 '''
     vggprune_attention_weight.py: Prune VGG19 CIFAR10 Conv2d Weight by attention-based method
     
-    (1) Prune VGG19 with 70% proportion for cifar10 (Test accuracy: 19.17%) 12.96
+    Baseline:
+    (1) Prune VGG19 with 70% proportion for cifar10 (Test accuracy: 10.00%)
     python vggprune_attention_weight.py --dataset cifar10 --depth 19 --percent 0.7 
-        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_vgg19_percent_0.7
+        --model ./logs/baseline_vgg19_cifar10/model_best.pth.tar --save ./logs/attention_prune_weight_vgg19_percent_0.7
         
-
+    (2) Prune VGG19 with 50% proportion for cifar10 (Test accuracy: 19.17%)
+    python vggprune_attention_weight.py --dataset cifar10 --depth 19 --percent 0.5 
+        --model ./logs/baseline_vgg19_cifar10/model_best.pth.tar --save ./logs/attention_prune_weight_vgg19_percent_0.5
+    
+    Sparsity:
+    (1) Prune Sparsity VGG19 with 70% proportion for cifar10 (Test accuracy: 12.96%)
+    python vggprune_attention_weight.py --dataset cifar10 --depth 19 --percent 0.7
+        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_weight_vgg19_sr_percent_0.7
+    
+    (2) Prune Sparsity VGG19 with 50% proportion for cifar10 (Test accuracy: 93.35%)
+    python vggprune_attention_weight.py --dataset cifar10 --depth 19 --percent 0.5
+        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_weight_vgg19_sr_percent_0.5
 '''
 
 # Prune settings
@@ -221,7 +233,7 @@ if __name__ == '__main__':
         elif isinstance(m0, nn.Conv2d):
             idx0 = np.squeeze(np.argwhere(np.asarray(start_mask.cpu().numpy())))
             idx1 = np.squeeze(np.argwhere(np.asarray(end_mask.cpu().numpy())))
-            print('In shape: {:d}, Out shape {:d}.'.format(idx0.size, idx1.size))
+            # print('In shape: {:d}, Out shape {:d}.'.format(idx0.size, idx1.size))
             if idx0.size == 1:
                 idx0 = np.resize(idx0, (1,))  # shape: () convert to (1,)
             if idx1.size == 1:
