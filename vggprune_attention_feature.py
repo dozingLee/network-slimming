@@ -47,6 +47,7 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 if not os.path.exists(args.save):
     os.makedirs(args.save)
 
+# Model
 model = vgg(dataset=args.dataset, depth=args.depth)
 if args.cuda:
     model.cuda()
@@ -62,36 +63,27 @@ if args.model:
               .format(args.model, checkpoint['epoch'], best_prec1))
     else:
         print("=> no checkpoint found at '{}'".format(args.model))
+print('Origin model: \r\n', model)
 
-print(model)
+# Dataset
+kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
+if args.dataset == 'cifar10':
+    test_loader = torch.utils.data.DataLoader(
+        datasets.CIFAR10('./data.cifar10', train=False, transform=transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
+        batch_size=args.test_batch_size, shuffle=True, **kwargs)
+elif args.dataset == 'cifar100':
+    test_loader = torch.utils.data.DataLoader(
+        datasets.CIFAR100('./data.cifar100', train=False, transform=transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
+        batch_size=args.test_batch_size, shuffle=True, **kwargs)
+else:
+    raise ValueError("No valid dataset is given.")
 
-# Number of Conv2d.weight
-num_total = 0
-for m in model.modules():
-    if isinstance(m, nn.Conv2d):
-        num_total += m.weight.data.shape[0]
-
-# Gamma list of Conv2d.weight
-gamma_list = torch.zeros(num_total)
-index = 0
-
-'''
-    Attention Transfer
-
-    1. Conv2d's weight data
-        weight data: [Nout, Nin, kernel_size[0], kernel_size[1]]
-    2. Resize and absolute
-        Nout = C, Nin = H, kernel_size[0] * kernel_size[1] = W
-        A = [C, H, W]
-    3. Sum of values along the channel direction
-    4. Square of two norm
-    5. Normalize weight data
-    6. Pruning standard
-
-'''
-
-
-def conv2d_gramma(weight_data):
+# Algorithm
+def attention_based_gramma(weight_data):
     # 1. A: resize and absolute
     d1, d2 = weight_data.shape[0], weight_data.shape[1]
     A = weight_data.view(d1, d2, -1).abs()
@@ -120,66 +112,66 @@ def conv2d_gramma(weight_data):
 
     return gammas
 
+# one batch of Dataset
+idx, data_item = next(enumerate(test_loader))
+data1 = data_item[0][0].clone().unsqueeze(0)  # [1, 3, 32, 32]
+if args.cuda:
+    data1 = data1.cuda()
 
-# Weight
-for k, m in enumerate(model.modules()):
-    if isinstance(m, nn.Conv2d):
-        gammas = conv2d_gramma(m.weight.data.clone())
-        size = m.weight.data.shape[0]
-        gamma_list[index:(index + size)] = gammas.clone()
+
+# Process
+# number of channels
+num_total = 0
+for m in model.modules():
+    if isinstance(m, nn.BatchNorm2d):
+        num_total += m.weight.data.shape[0]
+gamma_list = torch.zeros(num_total)
+
+# all channels' gamma
+one_batch = data1.clone()
+index = 0
+for idx, m in enumerate(model.features):
+    one_batch = m(one_batch)
+    if isinstance(m, nn.ReLU):
+        value = one_batch.clone().squeeze(0)
+        size = value.shape[0]
+        gammas = attention_based_gramma(value)
+        gamma_list[index:(index+size)] = gammas.clone()
         index += size
 
-# Threshold
-y, i = torch.sort(gamma_list)  # descending order, y: sort list, i: index list
-thre_index = int(num_total * args.percent)  # threshold index
-thre = y[thre_index]  # threshold value
+# threshold
+y, i = torch.sort(gamma_list)
+thre_idx = int(num_total * args.percent)
+thre = gamma_list[thre_idx]
 
-# Prune
-pruned = 0
+# Pruned
+num_pruned = 0
 cfg = []
 cfg_mask = []
+one_batch = data1.clone()
 for k, m in enumerate(model.modules()):
-    if isinstance(m, nn.Conv2d):
-        gamma_list = conv2d_gramma(m.weight.data.clone())
-        mask = gamma_list.gt(thre).float().cuda()  # if value > threshold: value else 0
-        pruned = pruned + mask.shape[0] - torch.sum(mask)  # Num of pruned
+    one_batch = m(one_batch)
+    if isinstance(m, nn.BatchNorm2d):
+        value = nn.ReLU(one_batch.clone())
+        mask = value.gt(thre).float().cuda()
+        num_pruned += mask.shape[0] - torch.sum(mask)
+        m.weight.data.mul_(mask)
+        m.bias.data.mul_(mask)
         cfg.append(int(torch.sum(mask)))
         cfg_mask.append(mask.clone())
         print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
             format(k, mask.shape[0], int(torch.sum(mask))))
-    elif isinstance(m, nn.BatchNorm2d):
-        mask = cfg_mask[len(cfg_mask) - 1]
-        m.weight.data.mul_(mask)  # pruned weight
-        m.bias.data.mul_(mask)  # pruned bias
     elif isinstance(m, nn.MaxPool2d):
         cfg.append('M')
 
-pruned_ratio = pruned / num_total
-
+pruned_ratio = num_pruned / num_total
 print('Pre-processing Successful! Pruned ratio: ', pruned_ratio)
 
 
-# simple test model after Pre-processing prune (simple set BN scales to zeros)
-def test(model):
-    kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
-    if args.dataset == 'cifar10':
-        test_loader = torch.utils.data.DataLoader(
-            datasets.CIFAR10('./data.cifar10', train=False, transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
-            batch_size=args.test_batch_size, shuffle=True, **kwargs)
-    elif args.dataset == 'cifar100':
-        test_loader = torch.utils.data.DataLoader(
-            datasets.CIFAR100('./data.cifar100', train=False, transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
-            batch_size=args.test_batch_size, shuffle=True, **kwargs)
-    else:
-        raise ValueError("No valid dataset is given.")
+def test(model, dataloader):
     model.eval()
     correct = 0
-
-    for data, target in test_loader:
+    for data, target in dataloader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         with torch.no_grad():
@@ -194,8 +186,7 @@ def test(model):
 
 
 if __name__ == '__main__':
-    # original model
-    acc = test(model)
+    acc = test(model, test_loader)
 
     # new model
     newmodel = vgg(dataset=args.dataset, cfg=cfg)
@@ -248,4 +239,4 @@ if __name__ == '__main__':
 
     print(newmodel)
     model = newmodel
-    test(model)
+    test(model, test_loader)
