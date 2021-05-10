@@ -38,9 +38,9 @@ parser.add_argument('--depth', type=int, default=19,
                     help='depth of the vgg')
 parser.add_argument('--percent', type=float, default=0.5,
                     help='scale sparse rate (default: 0.5)')
-parser.add_argument('--model', default='./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar', type=str, metavar='PATH',
+parser.add_argument('--model', default='', type=str, metavar='PATH',
                     help='path to the model (default: none)')
-parser.add_argument('--save', default='./logs/prune_vgg19_percent_0.3', type=str, metavar='PATH',
+parser.add_argument('--save', default='', type=str, metavar='PATH',
                     help='path to save pruned model (default: none)')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()

@@ -43,7 +43,7 @@ import models
      > python main.py --refine ./logs/attention_prune_vgg19_percent_0.5/pruned.pth.tar 
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_vgg19_percent_0.5
         
-    Attention Feature: VGG19 with 50% proportion for cifar10 (Best accuracy: -)
+    Attention Feature: VGG19 with 50% proportion for cifar10 (Best accuracy: 0.9387)
     > python main.py --refine ./logs/attention_prune_feature_vgg19_sr_percent_0.5/pruned.pth.tar 
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_feature_vgg19_percent_0.5
         
@@ -93,7 +93,7 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
 parser.add_argument('--log-interval', type=int, default=100, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--save', default='', type=str, metavar='PATH',
-                    help='path to save prune model (default: current directory)')
+                    help='path to save prune model (default: none, current directory: ./ )')
 parser.add_argument('--arch', default='vgg', type=str, 
                     help='architecture to use (vgg, resnet, densenet)')
 parser.add_argument('--depth', default=19, type=int,
