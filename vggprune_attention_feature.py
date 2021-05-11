@@ -28,6 +28,14 @@ from models import *
     (2) Prune Sparsity VGG19 with 50% proportion for cifar10 (Test accuracy: 92.76%)
     python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.5
         --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_sr_percent_0.5
+        
+    (3) Prune Sparsity VGG19 with 70% proportion for cifar100 (Test accuracy: -)
+    python vggprune_attention_feature.py --dataset cifar100 --depth 19 --percent 0.7
+        --model ./logs/sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_sr_cifar100_percent_0.7
+    
+    (4) Prune Sparsity VGG19 with 50% proportion for cifar100 (Test accuracy: 18.69%)
+    python vggprune_attention_feature.py --dataset cifar100 --depth 19 --percent 0.5
+        --model ./logs/sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_sr_cifar100_percent_0.5
 
 '''
 
@@ -71,6 +79,7 @@ if args.model:
     else:
         print("=> no checkpoint found at '{}'".format(args.model))
     # print('Origin model: \r\n', model)
+
 
 # Algorithm
 def attention_based_gramma(weight_data):
@@ -122,6 +131,7 @@ def get_dataloader():
     else:
         raise ValueError("No valid dataset is given.")
 
+
 def test(model, test_loader):
     model.eval()
     correct = 0
@@ -137,8 +147,6 @@ def test(model, test_loader):
     print('\nTest set: Accuracy: {}/{} ({:.2f}%)\n'.format(
         correct, len(test_loader.dataset), 100. * correct / len(test_loader.dataset)))
     return correct / float(len(test_loader.dataset))
-
-
 
 
 if __name__ == '__main__':
@@ -168,7 +176,7 @@ if __name__ == '__main__':
             value = relu(one_batch.clone().squeeze(0))
             size = value.shape[0]
             gammas = attention_based_gramma(value)
-            gamma_list[index:(index+size)] = gammas.clone()
+            gamma_list[index:(index + size)] = gammas.clone()
             index += size
 
     # threshold
@@ -228,7 +236,7 @@ if __name__ == '__main__':
             m1.weight.data = m0.weight.data[idx1.tolist()].clone()
             m1.bias.data = m0.bias.data[idx1.tolist()].clone()
             m1.running_mean = m0.running_mean[idx1.tolist()].clone()  # Calculate the average of the data so far
-            m1.running_var = m0.running_var[idx1.tolist()].clone()    # Calculate the variance of the data so far
+            m1.running_var = m0.running_var[idx1.tolist()].clone()  # Calculate the variance of the data so far
             layer_id_in_cfg += 1  # next cfg
             start_mask = end_mask.clone()  # next start mask
             if layer_id_in_cfg < len(cfg_mask):

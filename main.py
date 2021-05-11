@@ -29,12 +29,18 @@ import models
     VGG19 for cifar10 & hyper-parameter sparsity 1e-4 (Best accuracy: 0.9347)
     > python main.py -sr --s 0.0001 --dataset cifar10 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar10_s_1e-4
     
+    VGG19 for cifar100 & hyper-parameter sparsity 1e-4 (Best accuracy: 0.7269)
+    > python main.py -sr --s 0.0001 --dataset cifar100 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar100_s_1e-4
+    
+    
     (3) Prune:
         VGG model references vggprune.py
         ResNet model references resprune.py
         DenseNet model references denseprune.py
     
     (4) Fine tune:
+    
+    
     Batch Normalization: VGG19 with 50% proportion for cifar10 (Best accuracy: 0.9373)
     > python main.py --refine ./logs/prune_vgg19_percent_0.5/pruned.pth.tar 
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_vgg19_percent_0.5
@@ -51,10 +57,20 @@ import models
     Batch Normalization: VGG19 with 70% proportion for cifar10 (Best accuracy: 0.9402)
     > python main.py --refine ./logs/prune_vgg19_percent_0.7/pruned.pth.tar 
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_vgg19_percent_0.7
+    
+    Batch Normalization: VGG19 with 50% proportion for cifar100 (Best accuracy: 0.7351)
+    > python main.py --refine ./logs/prune_vgg19_cifar100_percent_0.5/pruned.pth.tar 
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_vgg19_cifar100_percent_0.5
+    
         
     Attention Weight: VGG19 with 70% proportion for cifar10 (Best accuracy: 0.9259)
      > python main.py --refine ./logs/attention_prune_vgg19_percent_0.7/pruned.pth.tar 
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_vgg19_percent_0.7
+    
+    
+    Attention Feature: VGG19 with 50% proportion for cifar100 (Best accuracy: 0.7352)
+    > python main.py --refine ./logs/attention_prune_feature_vgg19_sr_cifar100_percent_0.5/pruned.pth.tar 
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_feature_vgg19_cifar100_percent_0.5
     
     
 '''
