@@ -11,7 +11,7 @@ from models import *
     vggprune_attention_feature.py: Prune VGG19 CIFAR10 Feature by attention-based method
     
     Baseline
-    (1) Prune VGG19 with 70% proportion for cifar10 (Test accuracy: -)
+    (1) Prune VGG19 with 70% proportion for cifar10 (Test accuracy: 32.61%)
     python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.7 
         --model ./logs/baseline_vgg19_cifar10/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_percent_0.7
      
@@ -20,15 +20,16 @@ from models import *
         --model ./logs/baseline_vgg19_cifar10/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_percent_0.5
         
     
-    Sparsity
-    (1) Prune Sparsity VGG19 with 70% proportion for cifar10 (Test accuracy: -)
+    Sparsity Cifar10
+    (1) Prune Sparsity VGG19 with 70% proportion for cifar10 (Test accuracy: 27.91%%)
     python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.7
         --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_sr_percent_0.7
     
-    (2) Prune Sparsity VGG19 with 50% proportion for cifar10 (Test accuracy: 92.76%)
+    (2) Prune Sparsity VGG19 with 50% proportion for cifar10 (Test accuracy: 93. 02%%)
     python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.5
         --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_sr_percent_0.5
         
+    Sparsity Cifar100    
     (3) Prune Sparsity VGG19 with 70% proportion for cifar100 (Test accuracy: -)
     python vggprune_attention_feature.py --dataset cifar100 --depth 19 --percent 0.7
         --model ./logs/sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_sr_cifar100_percent_0.7
@@ -49,11 +50,11 @@ parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
 parser.add_argument('--depth', type=int, default=19,
                     help='depth of the vgg')
-parser.add_argument('--percent', type=float, default=0.5,
+parser.add_argument('--percent', type=float, default=0.7,
                     help='scale sparse rate (default: 0.5)')
 parser.add_argument('--model', default='', type=str, metavar='PATH',
                     help='path to the model (default: none)')
-parser.add_argument('--save', default='', type=str, metavar='PATH',
+parser.add_argument('--save', default='./', type=str, metavar='PATH',
                     help='path to save pruned model (default: none)')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -81,35 +82,35 @@ if args.model:
     # print('Origin model: \r\n', model)
 
 
-# Algorithm
-def attention_based_gramma(weight_data):
-    # 1. A: resize and absolute
+# Activation-based gamma
+def activation_based_gamma(weight_data):
     d1, d2 = weight_data.shape[0], weight_data.shape[1]
+
+    # 1. A: feature map data
     A = weight_data.view(d1, d2, -1).abs()
     c, h, w = A.shape
 
-    # 2. F(A): sum of values along the channel direction
-    FA = torch.zeros(h, w).cuda()
+    # 2. Fsum(A): sum of values along the channel direction
+    FsumA = torch.zeros(h, w).cuda()
     for i in range(c):
-        FA.add_(A[i])
+        FsumA.add_(A[i])
 
-    # 3. ||F(A)||^2: square of two norm
-    FA_s = torch.linalg.norm(FA)
+    # 3. ||Fsum(A)||2: two norm
+    FsumA_norm = torch.linalg.norm(FsumA)
 
-    # 4. F(A) / ||F(A)||^2: normalize weight data
-    F_all = FA / FA_s
+    # 4. F(A) / ||F(A)||2: normalize weight data
+    F_all = FsumA / FsumA_norm
 
-    # 5. F(Aj) / ||F(Aj)||^2 & gamma = ∑ | F(A)/||F(A)||^2 - F(Aj)/||F(Aj)||^2 |: pruning standard
-    gammas = torch.zeros(c)
+    # 5. F(Aj) / ||F(Aj)||^2 & gamma = ∑ | F(A) / ||F(A)||2 - F(Aj) / ||F(Aj)||2 |
+    gamma = torch.zeros(c)
     for j in range(c):
-        Aj = A[j]
-        FAj = FA - Aj
-        FAj_s = torch.linalg.norm(FAj)
-        Fj = FAj / FAj_s
-        gamma_j = (F_all - Fj).abs().sum()
-        gammas[j] = gamma_j
+        FAj = FsumA - A[j]
+        FAj_norm = torch.linalg.norm(FAj)
+        Fj = FAj / FAj_norm
+        #         gamma[j] = (F_all - Fj).abs().sum()
+        gamma[j] = torch.linalg.norm(F_all - Fj)
 
-    return gammas
+    return gamma
 
 
 def get_dataloader():
@@ -151,7 +152,6 @@ def test(model, test_loader):
 
 if __name__ == '__main__':
     test_loader = get_dataloader()
-    relu = torch.nn.ReLU()
 
     # one batch of Dataset
     idx, data_item = next(enumerate(test_loader))
@@ -172,11 +172,11 @@ if __name__ == '__main__':
     index = 0
     for idx, m in enumerate(model.feature):
         one_batch = m(one_batch)
-        if isinstance(m, nn.ReLU):
-            value = relu(one_batch.clone().squeeze(0))
+        if isinstance(m, nn.BatchNorm2d):
+            value = one_batch.clone().squeeze(0)
+            gamma = activation_based_gamma(value)
             size = value.shape[0]
-            gammas = attention_based_gramma(value)
-            gamma_list[index:(index + size)] = gammas.clone()
+            gamma_list[index:(index + size)] = gamma.clone()
             index += size
 
     # threshold
@@ -192,8 +192,8 @@ if __name__ == '__main__':
     for k, m in enumerate(model.feature):
         one_batch = m(one_batch)
         if isinstance(m, nn.BatchNorm2d):
-            value = relu(one_batch.clone().squeeze(0))
-            gammas = attention_based_gramma(value)
+            value = one_batch.clone().squeeze(0)
+            gammas = activation_based_gamma(value)
             mask = gammas.gt(thre).float().cuda()
             m.weight.data.mul_(mask)
             m.bias.data.mul_(mask)

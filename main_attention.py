@@ -33,6 +33,12 @@ import models
     > python main.py -sr --s 0.0001 --dataset cifar100 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar100_s_1e-4
     
     
+    Activation-based
+     VGG19 for cifar10 & hyper-parameter activation 1e-4 (Best accuracy: -)
+    > python main_attention.py -sr --s 0.0001 --dataset cifar10 --arch vgg --depth 19 --save ./logs/activation_vgg19_cifar10_s_1e-4
+    
+    
+    
     (3) Prune:
         VGG model references vggprune.py
         ResNet model references resprune.py
@@ -40,42 +46,35 @@ import models
     
     (4) Fine tune:
     
-    Batch Normalization:
     
-    (1) Cifar10 VGG19 with 50% proportion (Best accuracy: 0.9373)
-    python main.py --refine ./logs/prune_vgg19_percent_0.5/pruned.pth.tar 
+    Batch Normalization: VGG19 with 50% proportion for cifar10 (Best accuracy: 0.9373)
+    > python main.py --refine ./logs/prune_vgg19_percent_0.5/pruned.pth.tar 
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_vgg19_percent_0.5
     
-    (2) Cifar10 VGG19 with 70% proportion (Best accuracy: 0.9402)
-    python main.py --refine ./logs/prune_vgg19_percent_0.7/pruned.pth.tar 
-        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_vgg19_percent_0.7
+    Attention Weight: VGG19 with 50% proportion for cifar10 (Best accuracy: 0.9379)
+     > python main.py --refine ./logs/attention_prune_vgg19_percent_0.5/pruned.pth.tar 
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_vgg19_percent_0.5
         
-    (3) Cifar100 VGG19 with 50% proportion for cifar100 (Best accuracy: 0.7351)
-    python main.py --refine ./logs/prune_vgg19_cifar100_percent_0.5/pruned.pth.tar 
+    Attention Feature: VGG19 with 50% proportion for cifar10 (Best accuracy: 0.9387)
+    > python main.py --refine ./logs/attention_prune_feature_vgg19_sr_percent_0.5/pruned.pth.tar 
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_feature_vgg19_percent_0.5
+        
+
+    Batch Normalization: VGG19 with 70% proportion for cifar10 (Best accuracy: 0.9402)
+    > python main.py --refine ./logs/prune_vgg19_percent_0.7/pruned.pth.tar 
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_vgg19_percent_0.7
+    
+    Batch Normalization: VGG19 with 50% proportion for cifar100 (Best accuracy: 0.7351)
+    > python main.py --refine ./logs/prune_vgg19_cifar100_percent_0.5/pruned.pth.tar 
         --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_vgg19_cifar100_percent_0.5
     
-    Attention Weight:
-    
-    (1) Cifar10 VGG19 with 50% proportion (Best accuracy: 0.9379)
-    python main.py --refine ./logs/attention_prune_vgg19_percent_0.5/pruned.pth.tar 
-        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_vgg19_percent_0.5
-    
-    (2) Cifar10 VGG19 with 70% proportion (Best accuracy: 0.9259)
+        
+    Attention Weight: VGG19 with 70% proportion for cifar10 (Best accuracy: 0.9259)
      > python main.py --refine ./logs/attention_prune_vgg19_percent_0.7/pruned.pth.tar 
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_vgg19_percent_0.7
     
-    Attention Feature:
     
-    (1) Cifar10 VGG19 with 50% proportion (Best accuracy: 0.9387)
-    python main.py --refine ./logs/attention_prune_feature_vgg19_sr_percent_0.5/pruned.pth.tar 
-        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_feature_vgg19_percent_0.5
-    
-    (2) Cifar10 VGG19 with 70% proportion (Best accuracy: 0.9363)
-    python main.py --refine ./logs/attention_prune_feature_vgg19_sr_percent_0.7/pruned.pth.tar 
-        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_feature_vgg19_percent_0.7
-    
-    
-    (3) Cifar100 VGG19 with 50% proportion (Best accuracy: 0.7352)
+    Attention Feature: VGG19 with 50% proportion for cifar100 (Best accuracy: 0.7352)
     > python main.py --refine ./logs/attention_prune_feature_vgg19_sr_cifar100_percent_0.5/pruned.pth.tar 
         --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_feature_vgg19_cifar100_percent_0.5
     
@@ -203,11 +202,44 @@ if args.resume:
         print("=> no checkpoint found at '{}'".format(args.resume))
 
 
+# Algorithm
+def activation_based_gamma(weight_data):
+    d1, d2 = weight_data.shape[0], weight_data.shape[1]
+
+    # 1. A: feature map data
+    A = weight_data.view(d1, d2, -1).abs()
+    c, h, w = A.shape
+
+    # 2. Fsum(A): sum of values along the channel direction
+    FsumA = torch.zeros(h, w)
+    for i in range(c):
+        FsumA.add_(A[i])
+
+    # 3. ||Fsum(A)||2: two norm
+    FsumA_norm = torch.linalg.norm(FsumA)
+
+    # 4. F(A) / ||F(A)||2: normalize weight data
+    F_all = FsumA / FsumA_norm
+
+    # 5. F(Aj) / ||F(Aj)||^2 & gamma = ∑ | F(A) / ||F(A)||2 - F(Aj) / ||F(Aj)||2 |
+    gamma = torch.zeros(c)
+    for j in range(c):
+        FAj = FsumA - A[j]
+        FAj_norm = torch.linalg.norm(FAj)
+        Fj = FAj / FAj_norm
+        # gamma[j] = (F_all - Fj).abs().sum()
+        gamma[j] = torch.linalg.norm(F_all - Fj)
+
+    return gamma
+
+
+
 # additional subgradient descent on the sparsity-induced penalty term
-def updateBN():
-    for m in model.modules():
-        if isinstance(m, nn.BatchNorm2d):
-            m.weight.grad.data.add_(args.s * torch.sign(m.weight.data))  # 稀疏度惩罚项
+# def updateBN():
+#     for m in model.modules():
+#         if isinstance(m, nn.BatchNorm2d):
+#             gamma = activation_based_gamma(m.weight.data)
+#             m.weight.grad.data.add_(args.s * torch.sign())  # 稀疏度惩罚项
 
 
 def train(epoch):
@@ -220,9 +252,16 @@ def train(epoch):
         output = model(data)
         loss = F.cross_entropy(output, target)
         pred = output.data.max(1, keepdim=True)[1]
-        loss.backward()
         if args.sr:  # sparsity regularization
-            updateBN()
+            # updateBN()
+            regularization_loss = 0
+            for k, m in enumerate(model.feature):
+                if isinstance(m, nn.BatchNorm2d):
+                    gamma = activation_based_gamma()
+                    regularization_loss += args.s * torch.sum(gamma)
+            loss += regularization_loss
+
+        loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.2f}%)]\tLoss: {:.6f}'.format(
@@ -275,7 +314,3 @@ if __name__ == '__main__':
         }, is_best, filepath=args.save)
 
     print("Best accuracy: " + str(best_prec1))
-
-
-# python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 --model ./logs/model_best_vggnet_sr_93.78.pth.tar --save ./logs/vggprune
-# python main.py --refine ./logs/pruned.pth.tar --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs
