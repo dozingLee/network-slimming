@@ -16,13 +16,13 @@ import models
     main.py: Train model with dataset & Save best model
 
     (1) Baseline: 
-    VGG19 for cifar10 (Best accuracy: 0.9391)
+    VGG19 cifar10 (Best accuracy: 0.9391)
     > python main.py --dataset cifar10 --arch vgg --depth 19 --save ./logs/baseline_vgg19_cifar10
     
-    VGG19 for cifar100 (Best accuracy: 0.7255)
+    VGG19 cifar100 (Best accuracy: 0.7255)
     > python main.py --dataset cifar100 --arch vgg --depth 19 --save ./logs/baseline_vgg19_cifar100
     
-    ResNet for cifar10 (Best accuracy: 0.9507)
+    ResNet cifar10 (Best accuracy: 0.9507)
     > python main.py --dataset cifar10 --arch resnet --depth 164 --save ./logs/baseline_resnet164_cifar10
 
     (2) Sparsity: 
@@ -77,27 +77,30 @@ import models
     python main.py --refine ./logs/attention_prune_feature_vgg19_sr_percent_0.7/pruned.pth.tar 
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_feature_vgg19_percent_0.7
     
-    Attention Sparstiy
-    0.9388
+    (3) Cifar100 VGG19 with 50% proportion (Best accuracy: 0.7352)
+    > python main.py --refine ./logs/attention_prune_feature_vgg19_sr_cifar100_percent_0.5/pruned.pth.tar 
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_feature_vgg19_cifar100_percent_0.5
+    
+    
+    Attention Sparsity:
+    
+    (1) Sparsity Cifar10 VGG19 with 70% proportion (Best Accuracy: 0.9388)
     python main.py --refine ./logs/attention_sparsity_prune_feature_vgg19_percent_0.7/pruned.pth.tar 
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_sparsity_fine_tune_feature_vgg19_percent_0.7
     
-    70.20%
+    (2) Sparstiy Cifar100 VGG19 with 70% proportion (Best Accuracy: 70.20%)
     python main.py --refine ./logs/attention_sparsity_prune_feature_vgg19_cifar100_percent_0.7/pruned.pth.tar 
         --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_sparsity_fine_tune_feature_vgg19_cifar100_percent_0.7
     
-    72.59%
+    (3) Sparstiy Cifar100 VGG19 with 60% proportion (Best Accuracy: 72.59%)
     python main.py --refine ./logs/attention_sparsity_prune_feature_vgg19_cifar100_percent_0.6/pruned.pth.tar 
         --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_sparsity_fine_tune_feature_vgg19_cifar100_percent_0.6
     
-    73.23%
+    (3) Sparstiy Cifar100 VGG19 with 50% proportion (Best Accuracy: 73.23%)
     python main.py --refine ./logs/attention_sparsity_prune_feature_vgg19_cifar100_percent_0.5/pruned.pth.tar 
         --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_sparsity_fine_tune_feature_vgg19_cifar100_percent_0.5
     
     
-    (3) Cifar100 VGG19 with 50% proportion (Best accuracy: 0.7352)
-    > python main.py --refine ./logs/attention_prune_feature_vgg19_sr_cifar100_percent_0.5/pruned.pth.tar 
-        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_feature_vgg19_cifar100_percent_0.5
     
     
 '''
