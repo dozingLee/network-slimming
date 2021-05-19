@@ -26,12 +26,24 @@ import models
     > python main.py --dataset cifar10 --arch resnet --depth 164 --save ./logs/baseline_resnet164_cifar10
 
     (2) Sparsity: 
-    VGG19 for cifar10 & hyper-parameter sparsity 1e-4 (Best accuracy: 0.9347)
+    BN:
+    VGG19 for cifar10 & hyper-parameter sparsity 1e-4 (Best accuracy: 0.9347, 0.9366)
     > python main.py -sr --s 0.0001 --dataset cifar10 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar10_s_1e-4
     
     VGG19 for cifar100 & hyper-parameter sparsity 1e-4 (Best accuracy: 0.7269)
     > python main.py -sr --s 0.0001 --dataset cifar100 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar100_s_1e-4
     
+    Attention Sparsity:
+    VGG19 for cifar10 & hyper-parameter sparsity 1e-4 (Best accuracy: 0.9388)
+    > python main_attention.py -sr --s 0.0001 --dataset cifar10 --arch vgg --depth 19 --save ./logs/attention_sparsity_vgg19_cifar10_s_1e-4
+    
+    VGG19 for cifar100 & hyper-parameter sparsity 1e-4 (Best accuracy: 72.49%)
+    > python main_attention.py -sr --s 0.0001 --dataset cifar100 --arch vgg --depth 19 --save ./logs/attention_sparsity_vgg19_cifar100_s_1e-4
+    
+    ResNet for cifar10 (Best accuracy: 0.9480)
+    > python main_attention.py --dataset cifar10 --arch resnet --depth 164 --save ./logs/attention_sparsity_resnet164_cifar10
+
+
     
     Activation-based
      VGG19 for cifar10 & hyper-parameter activation 1e-4 (Best accuracy: -)
@@ -238,8 +250,7 @@ def activation_based_gamma(weight_data):
 # def updateBN():
 #     for m in model.modules():
 #         if isinstance(m, nn.BatchNorm2d):
-#             gamma = activation_based_gamma(m.weight.data)
-#             m.weight.grad.data.add_(args.s * torch.sign())  # 稀疏度惩罚项
+#             m.weight.grad.data.add_(args.s * torch.sign(m.weight))  # 稀疏度惩罚项
 
 
 def train(epoch):
@@ -253,13 +264,11 @@ def train(epoch):
         loss = F.cross_entropy(output, target)
         pred = output.data.max(1, keepdim=True)[1]
         if args.sr:  # sparsity regularization
-            # updateBN()
-            regularization_loss = 0
-            for k, m in enumerate(model.feature):
-                if isinstance(m, nn.BatchNorm2d):
-                    gamma = activation_based_gamma()
-                    regularization_loss += args.s * torch.sum(gamma)
-            loss += regularization_loss
+            l1_loss = []
+            for module in model.modules():
+                if type(module) is nn.BatchNorm2d:
+                    l1_loss.append(module.weight.abs().sum())
+            loss += args.s * sum(l1_loss)
 
         loss.backward()
         optimizer.step()

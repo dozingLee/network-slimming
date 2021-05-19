@@ -25,18 +25,27 @@ from models import *
     python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.7
         --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_sr_percent_0.7
     
-    (2) Prune Sparsity VGG19 with 50% proportion for cifar10 (Test accuracy: 93. 02%%)
+    python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.7
+    --model ./logs/attention_sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_sparsity_prune_feature_vgg19_percent_0.7
+
+    
+    
+    (2) Prune Sparsity VGG19 with 50% proportion for cifar10 (Test accuracy: 93.02%)
     python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.5
         --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_sr_percent_0.5
         
+        
     Sparsity Cifar100    
-    (3) Prune Sparsity VGG19 with 70% proportion for cifar100 (Test accuracy: -)
+    (3) Prune Sparsity VGG19 with 70% proportion for cifar100 (Test accuracy: 1.03%)
     python vggprune_attention_feature.py --dataset cifar100 --depth 19 --percent 0.7
-        --model ./logs/sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_sr_cifar100_percent_0.7
+        --model ./logs/attention_sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/attention_sparsity_prune_feature_vgg19_cifar100_percent_0.7
     
-    (4) Prune Sparsity VGG19 with 50% proportion for cifar100 (Test accuracy: 18.69%)
+    
+    python vggprune_attention_feature.py --dataset cifar100 --depth 19 --percent 0.6
+        --model ./logs/attention_sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/attention_sparsity_prune_feature_vgg19_cifar100_percent_0.6
+
     python vggprune_attention_feature.py --dataset cifar100 --depth 19 --percent 0.5
-        --model ./logs/sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_sr_cifar100_percent_0.5
+        --model ./logs/attention_sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/attention_sparsity_prune_feature_vgg19_cifar100_percent_0.5
 
 '''
 

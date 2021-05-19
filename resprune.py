@@ -7,6 +7,13 @@ from torch.autograd import Variable
 from torchvision import datasets, transforms
 from models import *
 
+'''
+  attention_sparsity_resnet164_cifar10
+    python vggprune_attention_feature.py --dataset cifar10 --depth 164 --percent 0.6
+        --model ./logs/attention_sparsity_resnet164_cifar10/model_best.pth.tar --save ./logs/attention_sparsity_prune_feature_resnet_percent_0.6
+            
+'''
+
 
 # Prune settings
 parser = argparse.ArgumentParser(description='PyTorch Slimming CIFAR prune')
