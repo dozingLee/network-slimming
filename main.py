@@ -11,7 +11,6 @@ from torchvision import datasets, transforms
 from torch.autograd import Variable
 import models
 
-
 '''
     main.py: Train model with dataset & Save best model
 
@@ -24,6 +23,7 @@ import models
     
     ResNet cifar10 (Best accuracy: 0.9507)
     > python main.py --dataset cifar10 --arch resnet --depth 164 --save ./logs/baseline_resnet164_cifar10
+
 
     (2) Sparsity: 
     VGG19 for cifar10 & hyper-parameter sparsity 1e-4 (Best accuracy: 0.9347)
@@ -40,6 +40,7 @@ import models
         VGG model references vggprune.py
         ResNet model references resprune.py
         DenseNet model references denseprune.py
+    
     
     (4) Fine tune:
     
@@ -80,8 +81,7 @@ import models
     (3) Cifar100 VGG19 with 50% proportion (Best accuracy: 0.7352)
     > python main.py --refine ./logs/attention_prune_feature_vgg19_sr_cifar100_percent_0.5/pruned.pth.tar 
         --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_fine_tune_feature_vgg19_cifar100_percent_0.5
-    
-    
+     
     Attention Sparsity:
     
     (1) Sparsity Cifar10 VGG19 with 70% proportion (Best Accuracy: 0.9388)
@@ -101,10 +101,23 @@ import models
         --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/attention_sparsity_fine_tune_feature_vgg19_cifar100_percent_0.5
     
     
+    Random Weight:
+    (1) VGG19 Cifar10 with 50% proportion (Best Accuracy: 0.9362)
+    python main.py --refine ./logs/prune_vgg19_percent_0.5/pruned.pth.tar --init-weight
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/random_fine_tune_vgg19_percent_0.5
+        
+        
+    python main.py --refine ./logs/prune_expand_vgg19_percent_0.7/pruned.pth.tar --init-weight
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_expand_vgg19_percent_0.7
     
     
+    python main.py --refine ./logs/prune_expand_vgg19_cifar100_percent_0.5/pruned.pth.tar --init-weight
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_expand_vgg19_cifar100_percent_0.5
+        
+    
+   python main.py --refine ./logs/prune_expand_more_vgg19_cifar100_percent_0.5/pruned.pth.tar --init-weight
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_expand_more_vgg19_cifar100_percent_0.5
 '''
-
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch Slimming CIFAR training')
@@ -113,7 +126,7 @@ parser.add_argument('--dataset', type=str, default='cifar10',
 parser.add_argument('--sparsity-regularization', '-sr', dest='sr', action='store_true',
                     help='train with channel sparsity regularization')  # Run sparsity regularization
 parser.add_argument('--s', type=float, default=0.0001,
-                    help='scale sparse rate (default: 0.0001)')         # Hyper-parameter sparsity (default 1e-4)
+                    help='scale sparse rate (default: 0.0001)')  # Hyper-parameter sparsity (default 1e-4)
 parser.add_argument('--refine', default='', type=str, metavar='PATH',
                     help='path to the pruned model to be fine tuned')
 parser.add_argument('--batch-size', type=int, default=64, metavar='N',
@@ -140,10 +153,12 @@ parser.add_argument('--log-interval', type=int, default=100, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--save', default='', type=str, metavar='PATH',
                     help='path to save prune model (default: none, current directory: ./ )')
-parser.add_argument('--arch', default='vgg', type=str, 
+parser.add_argument('--arch', default='vgg', type=str,
                     help='architecture to use (vgg, resnet, densenet)')
 parser.add_argument('--depth', default=19, type=int,
                     help='depth of the neural network')
+parser.add_argument('--init-weight', action='store_true', default=False,
+                    help='initialize model weight')
 
 # 0. Preset
 
@@ -157,59 +172,61 @@ if args.cuda:
 if not os.path.exists(args.save):
     os.makedirs(args.save)
 
-
 # 1. Dataset
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 if args.dataset == 'cifar10':
     train_loader = torch.utils.data.DataLoader(
         datasets.CIFAR10('./data.cifar10', train=True, download=True,
-                       transform=transforms.Compose([
-                           transforms.Pad(4),
-                           transforms.RandomCrop(32),
-                           transforms.RandomHorizontalFlip(),
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-                       ])),
+                         transform=transforms.Compose([
+                             transforms.Pad(4),
+                             transforms.RandomCrop(32),
+                             transforms.RandomHorizontalFlip(),
+                             transforms.ToTensor(),
+                             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+                         ])),
         batch_size=args.batch_size, shuffle=True, **kwargs)
     test_loader = torch.utils.data.DataLoader(
         datasets.CIFAR10('./data.cifar10', train=False, transform=transforms.Compose([
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-                       ])),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+        ])),
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
 else:
     train_loader = torch.utils.data.DataLoader(
         datasets.CIFAR100('./data.cifar100', train=True, download=True,
-                       transform=transforms.Compose([
-                           transforms.Pad(4),
-                           transforms.RandomCrop(32),
-                           transforms.RandomHorizontalFlip(),
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-                       ])),
+                          transform=transforms.Compose([
+                              transforms.Pad(4),
+                              transforms.RandomCrop(32),
+                              transforms.RandomHorizontalFlip(),
+                              transforms.ToTensor(),
+                              transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+                          ])),
         batch_size=args.batch_size, shuffle=True, **kwargs)
     test_loader = torch.utils.data.DataLoader(
         datasets.CIFAR100('./data.cifar100', train=False, transform=transforms.Compose([
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-                       ])),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+        ])),
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
 # 2. Model: fine-tune the pruned network
 if args.refine:
     checkpoint = torch.load(args.refine)
     model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth, cfg=checkpoint['cfg'])
-    model.load_state_dict(checkpoint['state_dict'])
+    if 'state_dict' in checkpoint:
+        model.load_state_dict(checkpoint['state_dict'])
 else:
     model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth)
+
+if args.init_weight:
+    # print("initialize model weight randomly")
+    model._initialize_weights()
 
 if args.cuda:
     model.cuda()
 
-
 # 3. Optimizer
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-
 
 # -1. Resume the process
 if args.resume:
@@ -250,7 +267,7 @@ def train(epoch):
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.2f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
+                       100. * batch_idx / len(train_loader), loss.item()))
 
 
 def test():
@@ -263,8 +280,8 @@ def test():
         with torch.no_grad():
             data, target = Variable(data), Variable(target)
             output = model(data)
-            test_loss += F.cross_entropy(output, target, size_average=False).item() # sum up batch loss
-            pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
+            test_loss += F.cross_entropy(output, target, size_average=False).item()  # sum up batch loss
+            pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
     test_loss /= len(test_loader.dataset)
@@ -298,7 +315,3 @@ if __name__ == '__main__':
         }, is_best, filepath=args.save)
 
     print("Best accuracy: " + str(best_prec1))
-
-
-# python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 --model ./logs/model_best_vggnet_sr_93.78.pth.tar --save ./logs/vggprune
-# python main.py --refine ./logs/pruned.pth.tar --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs
