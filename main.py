@@ -133,8 +133,10 @@ import matplotlib.pyplot as plt
         
     
     python main.py --refine logs/prune_vgg19_cifar100_percent_0.5/pruned.pth.tar
-        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save logs/prune_vgg19_cifar100_percent_0.5
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save logs/fine_tuning_vgg19_cifar100_percent_0.5
         
+    python main.py --refine logs/prune_vgg19_cifar100_percent_0.5/pruned.pth.tar --init-weight
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save logs/fine_tuning_vgg19_cifar100_percent_0.5_init
     
 '''
 
@@ -183,7 +185,6 @@ parser.add_argument('--init-weight', action='store_true', default=False,
 
 args = parser.parse_args()
 
-DEIVCE = torch.device('cuda:0' if args.no_cuda and torch.cuda.is_available() else 'cpu')
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 torch.manual_seed(args.seed)
 if args.cuda:
@@ -233,8 +234,8 @@ else:
 if args.refine:
     checkpoint = torch.load(args.refine)
     model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth, cfg=checkpoint['cfg'])
-    if 'state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['state_dict'])
+    model.load_state_dict(checkpoint['state_dict'])
+    model_cfg = checkpoint['cfg']
 else:
     model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth)
 
@@ -242,7 +243,7 @@ if args.init_weight:
     model._initialize_weights()
 
 if args.cuda:
-    model.to(DEIVCE)
+    model.cuda()
 
 # 3. Optimizer
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -273,7 +274,7 @@ def train(epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
-            data, target = data.to(DEIVCE), target.to(DEIVCE)
+            data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
         output = model(data)
@@ -295,7 +296,7 @@ def test():
     correct = 0
     for data, target in test_loader:
         if args.cuda:
-            data, target = data.to(DEIVCE), target.to(DEIVCE)
+            data, target = data.cuda(), target.cuda()
         with torch.no_grad():
             data, target = Variable(data), Variable(target)
             output = model(data)
@@ -317,14 +318,14 @@ def save_checkpoint(state, is_best, save_path):
         shutil.copyfile(os.path.join(save_path, 'checkpoint.pth.tar'), os.path.join(save_path, 'model_best.pth.tar'))
 
 
-def visualization_record(save_path):
+def visualization_record(best_prec, save_path):
     data = pd.read_csv(os.path.join(save_path, 'record.csv'))
     line_loss, = plt.plot(data['loss'], 'r-')
     line_prec, = plt.plot(data['prec'], 'b-')
     plt.legend([line_loss, line_prec], ['loss', 'accuracy'], loc='upper right')
     plt.ylabel('value', fontsize=12)
     plt.xlabel('epoch', fontsize=12)
-    plt.title('Train loss and accuracy', fontsize=14)
+    plt.title('Train loss and accuracy (best_prec: {})'.format(best_prec), fontsize=14)
     plt.savefig(os.path.join(save_path, "record train loss.png"))
     print('Save the training loss and accuracy successfully.')
 
@@ -347,15 +348,25 @@ if __name__ == '__main__':
         prec1, loss1 = test()           # process test
         is_best = prec1 > best_prec1    # save the best
         best_prec1 = max(prec1, best_prec1)
-        save_checkpoint({
-            'epoch': epoch,
-            'state_dict': model.state_dict(),
-            'best_prec1': best_prec1,
-            'optimizer': optimizer.state_dict(),
-        }, is_best, save_path=args.save)
+
+        if args.refine:
+            save_checkpoint({
+                'epoch': epoch,
+                'state_dict': model.state_dict(),
+                'best_prec1': best_prec1,
+                'optimizer': optimizer.state_dict()
+            }, is_best, save_path=args.save)
+        else:
+            save_checkpoint({
+                'epoch': epoch,
+                'state_dict': model.state_dict(),
+                'best_prec1': best_prec1,
+                'cfg': model_cfg,
+                'optimizer': optimizer.state_dict()
+            }, is_best, save_path=args.save)
 
         with open(record_file, 'a+') as f:
             f.write('{},{:.4f},{:.4f}\n'.format(epoch, loss1, prec1))
 
-    visualization_record(args.save)
-    print("Best accuracy: " + str(best_prec1))
+    visualization_record(best_prec1, args.save)
+    print("Best accuracy: {:.4f}".format(best_prec1))

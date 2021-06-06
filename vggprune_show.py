@@ -15,7 +15,10 @@ import models
     python vggprune_show.py --arch vgg --dataset cifar100 --depth 19
         --model logs/prune_vgg19_cifar100_percent_0.5/pruned.pth.tar  --save logs/prune_vgg19_cifar100_percent_0.5
     
-    e.g. fine-tining model
+    e.g. fine-tuning model
+    python vggprune_show.py --arch vgg --dataset cifar100 --depth 19
+        --model logs/fine_tuning_vgg19_cifar100_percent_0.5/model_best.pth.tar  --save logs/fine_tuning_vgg19_cifar100_percent_0.5
+    
 '''
 
 # Prune settings
