@@ -31,6 +31,9 @@ from models import *
     python vggprune.py --dataset cifar10 --depth 19 --percent 0.3 
         --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.3
         
+        
+    python vggprune.py --dataset cifar100 --depth 19 --percent 0.5
+        --model ./logs/sparsity_vgg19_cifar100_s_1e_4/model_best.pth.tar --save ./logs/prune_vgg19_cifar100_percent_0.5
 
 '''
 
@@ -52,13 +55,14 @@ parser.add_argument('--save', default='', type=str, metavar='PATH',
                     help='path to save pruned model (default: none)')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
+DEIVCE = torch.device('cuda:0' if args.no_cuda and torch.cuda.is_available() else 'cpu')
 
 if not os.path.exists(args.save):
     os.makedirs(args.save)
 
-model = vgg(dataset=args.dataset, depth=args.depth)
-if args.cuda:
-    model.cuda()
+model = vgg(dataset=args.dataset, depth=args.depth).to(DEIVCE)
+# if args.cuda:
+#     model.cuda()
 
 if args.model:
     if os.path.isfile(args.model):
@@ -100,8 +104,8 @@ cfg = []
 cfg_mask = []
 for k, m in enumerate(model.modules()):
     if isinstance(m, nn.BatchNorm2d):
-        weight_copy = m.weight.data.abs().clone()
-        mask = weight_copy.gt(thre).float().cuda()  # if value > threshold, True, else False
+        weight_copy = m.weight.data.abs().clone().to(DEIVCE)
+        mask = weight_copy.gt(thre).float()  # if value > threshold, True, else False
         pruned = pruned + mask.shape[0] - torch.sum(mask)  # Num of pruned
         m.weight.data.mul_(mask)  # pruned weight
         m.bias.data.mul_(mask)    # pruned bias
@@ -139,7 +143,7 @@ def test(model):
 
     for data, target in test_loader:
         if args.cuda:
-            data, target = data.cuda(), target.cuda()
+            data, target = data.to(DEIVCE), target.to(DEIVCE)
         with torch.no_grad():
             data, target = Variable(data), Variable(target)
             output = model(data)

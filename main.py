@@ -27,13 +27,23 @@ import models
 
     (2) Sparsity: 
     VGG19 for cifar10 & hyper-parameter sparsity 1e-4 (Best accuracy: 0.9347)
-    > python main.py -sr --s 0.0001 --dataset cifar10 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar10_s_1e-4
+    > python main.py -sr --s 0.0001 --dataset cifar10 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar10_s_1e_4
     
     VGG19 for cifar100 & hyper-parameter sparsity 1e-4 (Best accuracy: 0.7269)
-    > python main.py -sr --s 0.0001 --dataset cifar100 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar100_s_1e-4
+    > python main.py -sr --s 0.0001 --dataset cifar100 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar100_s_1e_4
     
-    0.9480
-    python main_attention.py --dataset cifar10 --arch resnet --depth 164 --save ./logs/attention_sparsity_resnet164_cifar10
+    
+    0.9393
+    python main.py -sr --s 0.0001 --dataset cifar10 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar10_s_1e_4
+    
+    0.9351
+    python main.py -sr --s 0.00001 --dataset cifar10 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar10_s_1e_5
+    
+    0.7222
+    python main.py -sr --s 0.0001 --dataset cifar100 --arch vgg --depth 19 --save ./logs/sparsity_vgg19_cifar100_s_1e_4
+    
+    
+
 
     
     (3) Prune:
@@ -163,8 +173,9 @@ parser.add_argument('--init-weight', action='store_true', default=False,
 # 0. Preset
 
 args = parser.parse_args()
-args.cuda = not args.no_cuda and torch.cuda.is_available()
 
+DEIVCE = torch.device('cuda:0' if args.no_cuda and torch.cuda.is_available() else 'cpu')
+args.cuda = not args.no_cuda and torch.cuda.is_available()
 torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
@@ -219,11 +230,10 @@ else:
     model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth)
 
 if args.init_weight:
-    # print("initialize model weight randomly")
     model._initialize_weights()
 
 if args.cuda:
-    model.cuda()
+    model.to(DEIVCE)
 
 # 3. Optimizer
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -254,7 +264,7 @@ def train(epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
-            data, target = data.cuda(), target.cuda()
+            data, target = data.to(DEIVCE), target.to(DEIVCE)
         data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
         output = model(data)
@@ -265,7 +275,7 @@ def train(epoch):
             updateBN()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.2f}%)]\tLoss: {:.6f}'.format(
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                        100. * batch_idx / len(train_loader), loss.item()))
 
@@ -276,7 +286,7 @@ def test():
     correct = 0
     for data, target in test_loader:
         if args.cuda:
-            data, target = data.cuda(), target.cuda()
+            data, target = data.to(DEIVCE), target.to(DEIVCE)
         with torch.no_grad():
             data, target = Variable(data), Variable(target)
             output = model(data)
@@ -284,11 +294,12 @@ def test():
             pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
-    test_loss /= len(test_loader.dataset)
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
-    return correct / float(len(test_loader.dataset))
+    # (The divisor is float and the dividend is long, but the result is long)
+    test_loss /= len(test_loader.dataset)               # loss mean
+    test_prec = float(correct) / len(test_loader.dataset)     # prec
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.4f})\n'.format(
+        test_loss, correct, len(test_loader.dataset), test_prec))
+    return test_prec, test_loss
 
 
 def save_checkpoint(state, is_best, filepath):
@@ -298,20 +309,35 @@ def save_checkpoint(state, is_best, filepath):
 
 
 if __name__ == '__main__':
+    # clean record file
+    record_file = os.path.join(args.save, 'record.csv')
+    if os.path.exists(record_file):
+        os.remove(record_file)
+    with open(record_file, 'w+') as f:
+        f.write('epoch,loss,prec\n')
+
+    # ====== Training ======
+    record_loss, record_prec = [], []
     best_prec1 = 0.
     for epoch in range(args.start_epoch, args.epochs):
         if epoch in [args.epochs * 0.5, args.epochs * 0.75]:  # decent the learning rate
             for param_group in optimizer.param_groups:
                 param_group['lr'] *= 0.1
-        train(epoch)
-        prec1 = test()
-        is_best = prec1 > best_prec1
+        train(epoch)                    # process train
+        prec1, loss1 = test()           # process test
+        is_best = prec1 > best_prec1    # save the best
         best_prec1 = max(prec1, best_prec1)
         save_checkpoint({
-            'epoch': epoch + 1,
+            'epoch': epoch,
             'state_dict': model.state_dict(),
             'best_prec1': best_prec1,
             'optimizer': optimizer.state_dict(),
         }, is_best, filepath=args.save)
+
+        record_loss.append(loss1)
+        record_prec.append(prec1)
+
+        with open(record_file, 'a+') as f:
+            f.write('{},{:.4f},{:.4f}\n'.format(epoch, loss1, prec1))
 
     print("Best accuracy: " + str(best_prec1))
