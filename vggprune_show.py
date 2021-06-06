@@ -6,8 +6,9 @@ import matplotlib.pyplot as plt
 import models
 
 ''' 
+
     e.g. vgg19-cifar10 pruning rates (0.5, 0.7) with y-limit
-    python vggprune_show.py --arch vgg --dataset cifar10 --depth 19 -y-limit --pruning-rates 0.5 0.7
+    python vggprune_show.py --arch vgg --dataset cifar10 --depth 19 --y-limit 1.0 --pruning-rates 0.5 0.7
         --model logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar  --save logs/sparsity_vgg19_cifar10_s_1e_4
     
     e.g. pruned model
@@ -26,13 +27,13 @@ parser.add_argument('--arch', default='vgg', type=str,
 parser.add_argument('--depth', type=int, default=19,
                     help='depth of the neural network (default: 19)')
 parser.add_argument('--model', default='', type=str, metavar='PATH',
-                    help='path to the model (default: none)')
+                    help='path to the model (default: None) ')
 parser.add_argument('--save', default='', type=str, metavar='PATH',
-                    help='path to save pruned model (default: none)')
+                    help='path to save pruned model (default: None)')
 parser.add_argument('--pruning-rates', default=[], type=float, metavar='R', nargs='*',
-                    help='pruning rates list (default: none)')
-parser.add_argument('-y-limit', action='store_true', default=False,
-                    help='y limit at [0, 1] for the global view (default: False)')
+                    help='pruning rates list, only model file with `cfg` can use (default: [])')
+parser.add_argument('--y-limit', type=float, default=None,
+                    help='y limit max value for the global view (default: None)')
 
 args = parser.parse_args()
 
@@ -103,7 +104,7 @@ def plot(list1d, list2d, channel_origin, pruning_rates, title, y_limit):
     for i, item in enumerate(record_linex):
         plt.plot(record_linex[i], record_liney[i], label='rate {}'.format(pruning_rates[i]))
     if y_limit:
-        y_lim_l, y_lim_r = 0.0, 1.0
+        y_lim_l, y_lim_r = 0.0, y_limit
         plt.gca().set(ylim=(y_lim_l, y_lim_r), ylabel='Weight Data')
     plt.xticks(tick_list, fontsize=font_size)
     plt.yticks(fontsize=font_size)

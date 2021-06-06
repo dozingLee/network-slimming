@@ -10,6 +10,9 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 import models
+import pandas as pd
+import matplotlib.pyplot as plt
+
 
 '''
     main.py: Train model with dataset & Save best model
@@ -117,16 +120,22 @@ import models
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/random_fine_tune_vgg19_percent_0.5
         
         
-    python main.py --refine ./logs/prune_expand_vgg19_percent_0.7/pruned.pth.tar --init-weight
-        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_expand_vgg19_percent_0.7
-    
-    
-    python main.py --refine ./logs/prune_expand_vgg19_cifar100_percent_0.5/pruned.pth.tar --init-weight
-        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_expand_vgg19_cifar100_percent_0.5
+   #  python main.py --refine ./logs/prune_expand_vgg19_percent_0.7/pruned.pth.tar --init-weight
+   #      --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_expand_vgg19_percent_0.7
+   #  
+   #  
+   #  python main.py --refine ./logs/prune_expand_vgg19_cifar100_percent_0.5/pruned.pth.tar --init-weight
+   #      --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_expand_vgg19_cifar100_percent_0.5
+   #      
+   #  
+   # python main.py --refine ./logs/prune_expand_more_vgg19_cifar100_percent_0.5/pruned.pth.tar --init-weight
+   #      --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_expand_more_vgg19_cifar100_percent_0.5
         
     
-   python main.py --refine ./logs/prune_expand_more_vgg19_cifar100_percent_0.5/pruned.pth.tar --init-weight
-        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save ./logs/fine_tune_expand_more_vgg19_cifar100_percent_0.5
+    python main.py --refine logs/prune_vgg19_cifar100_percent_0.5/pruned.pth.tar
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save logs/prune_vgg19_cifar100_percent_0.5
+        
+    
 '''
 
 # Training settings
@@ -302,10 +311,22 @@ def test():
     return test_prec, test_loss
 
 
-def save_checkpoint(state, is_best, filepath):
-    torch.save(state, os.path.join(filepath, 'checkpoint.pth.tar'))
+def save_checkpoint(state, is_best, save_path):
+    torch.save(state, os.path.join(save_path, 'checkpoint.pth.tar'))
     if is_best:
-        shutil.copyfile(os.path.join(filepath, 'checkpoint.pth.tar'), os.path.join(filepath, 'model_best.pth.tar'))
+        shutil.copyfile(os.path.join(save_path, 'checkpoint.pth.tar'), os.path.join(save_path, 'model_best.pth.tar'))
+
+
+def visualization_record(save_path):
+    data = pd.read_csv(os.path.join(save_path, 'record.csv'))
+    line_loss, = plt.plot(data['loss'], 'r-')
+    line_prec, = plt.plot(data['prec'], 'b-')
+    plt.legend([line_loss, line_prec], ['loss', 'accuracy'], loc='upper right')
+    plt.ylabel('value', fontsize=12)
+    plt.xlabel('epoch', fontsize=12)
+    plt.title('Train loss and accuracy', fontsize=14)
+    plt.savefig(os.path.join(save_path, "record train loss.png"))
+    print('Save the training loss and accuracy successfully.')
 
 
 if __name__ == '__main__':
@@ -317,7 +338,6 @@ if __name__ == '__main__':
         f.write('epoch,loss,prec\n')
 
     # ====== Training ======
-    record_loss, record_prec = [], []
     best_prec1 = 0.
     for epoch in range(args.start_epoch, args.epochs):
         if epoch in [args.epochs * 0.5, args.epochs * 0.75]:  # decent the learning rate
@@ -332,12 +352,10 @@ if __name__ == '__main__':
             'state_dict': model.state_dict(),
             'best_prec1': best_prec1,
             'optimizer': optimizer.state_dict(),
-        }, is_best, filepath=args.save)
-
-        record_loss.append(loss1)
-        record_prec.append(prec1)
+        }, is_best, save_path=args.save)
 
         with open(record_file, 'a+') as f:
             f.write('{},{:.4f},{:.4f}\n'.format(epoch, loss1, prec1))
 
+    visualization_record(args.save)
     print("Best accuracy: " + str(best_prec1))
