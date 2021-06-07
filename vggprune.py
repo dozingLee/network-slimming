@@ -12,9 +12,9 @@ from models import *
     vggprune.py: Prune vgg model with sparsity & Save to the local
     
     (1) 70%
-    Prune Sparsity VGG19 with 70% proportion for cifar10 (Test accuracy: 19.17%)
-    > python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 
-        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.7
+    Prune Sparsity VGG19 with 70% proportion for cifar10
+    python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 
+        --model logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save logs/prune_vgg19_cifar10_percent_0.7
     
     (2) 50%
     Prune Sparsity VGG19 with 50% proportion for cifar10 (Test accuracy: 93.47%)
@@ -55,15 +55,15 @@ parser.add_argument('--save', default='', type=str, metavar='PATH',
                     help='path to save pruned model (default: none)')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
-DEIVCE = torch.device('cuda:0' if args.no_cuda and torch.cuda.is_available() else 'cpu')
 
 if not os.path.exists(args.save):
     os.makedirs(args.save)
 
-model = vgg(dataset=args.dataset, depth=args.depth).to(DEIVCE)
-# if args.cuda:
-#     model.cuda()
+model = vgg(dataset=args.dataset, depth=args.depth)
+if args.cuda:
+    model.cuda()
 
+best_prec1 = 0.
 if args.model:
     if os.path.isfile(args.model):
         print("=> loading checkpoint '{}'".format(args.model))
@@ -104,12 +104,12 @@ cfg = []
 cfg_mask = []
 for k, m in enumerate(model.modules()):
     if isinstance(m, nn.BatchNorm2d):
-        weight_copy = m.weight.data.abs().clone().to(DEIVCE)
+        weight_copy = m.weight.data.abs().clone()
         mask = weight_copy.gt(thre).float()  # if value > threshold, True, else False
         pruned = pruned + mask.shape[0] - torch.sum(mask)  # Num of pruned
         m.weight.data.mul_(mask)  # pruned weight
         m.bias.data.mul_(mask)    # pruned bias
-        cfg.append(int(torch.sum(mask)))
+        cfg.append(int(torch.sum(mask)))  # int: transfer tensor into numpy
         cfg_mask.append(mask.clone())
         print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
             format(k, mask.shape[0], int(torch.sum(mask))))
@@ -143,16 +143,17 @@ def test(model):
 
     for data, target in test_loader:
         if args.cuda:
-            data, target = data.to(DEIVCE), target.to(DEIVCE)
+            data, target = data.cuda(), target.cuda()
         with torch.no_grad():
             data, target = Variable(data), Variable(target)
             output = model(data)
             pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
-    print('\nTest set: Accuracy: {}/{} ({:.2f}%)\n'.format(
-        correct, len(test_loader.dataset), 100. * correct / len(test_loader.dataset)))
-    return correct / float(len(test_loader.dataset))
+    test_prec = float(correct) / len(test_loader.dataset)
+    print('\nTest set: Accuracy: {}/{} ({:.4f})\n'
+          .format(correct, len(test_loader.dataset), test_prec))
+    return test_prec
 
 
 if __name__ == '__main__':
@@ -167,9 +168,12 @@ if __name__ == '__main__':
     num_parameters = sum([param.nelement() for param in newmodel.parameters()])
     savepath = os.path.join(args.save, "prune.txt")
     with open(savepath, "w") as fp:
-        fp.write("Configuration: \n" + str(cfg) + "\n")
-        fp.write("Number of parameters: \n" + str(num_parameters) + "\n")
-        fp.write("Test accuracy: \n" + str(acc))
+        fp.write("Configuration: \n{}\n".format(cfg))
+        fp.write("Prune ratio: {:.4f}\n".format(pruned_ratio))
+        fp.write("Number of parameters: {}\n".format(num_parameters))
+        fp.write("Origin Model accuracy: {:.4f}\n".format(best_prec1))
+        fp.write("Pruned Model accuracy: {:.4f}".format(acc))
+
 
     layer_id_in_cfg = 0
     start_mask = torch.ones(3)  # 初始为三通道
@@ -211,6 +215,3 @@ if __name__ == '__main__':
     print(newmodel)
     model = newmodel
     test(model)
-
-# python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 --model ./logs/model_best_vggnet_sr_93.78.pth.tar --save ./logs/vggprune
-# python main.py --refine ./logs/pruned.pth.tar --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save ./logs

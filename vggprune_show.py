@@ -7,7 +7,7 @@ import models
 
 ''' 
 
-    e.g. vgg19-cifar10 pruning rates (0.5, 0.7) with y-limit
+    e.g. baseline model with pruning rates (0.5, 0.7) with y-limit
     python vggprune_show.py --arch vgg --dataset cifar10 --depth 19 --y-limit 1.0 --pruning-rates 0.5 0.7
         --model logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar  --save logs/sparsity_vgg19_cifar10_s_1e_4
     
@@ -17,7 +17,8 @@ import models
     
     e.g. fine-tuning model
     python vggprune_show.py --arch vgg --dataset cifar100 --depth 19
-        --model logs/fine_tuning_vgg19_cifar100_percent_0.5/model_best.pth.tar  --save logs/fine_tuning_vgg19_cifar100_percent_0.5
+        --model logs/fine_tuning_vgg19_cifar100_feature_percent_0.5/model_best.pth.tar  
+        --save logs/fine_tuning_vgg19_cifar100_feature_percent_0.5
     
 '''
 
@@ -170,7 +171,7 @@ if __name__ == '__main__':
         if isinstance(m, nn.BatchNorm2d):
             length = m.weight.data.shape[0]
             num_total += length
-            bn_2d_list.append(m.weight.data.cpu().numpy())
+            bn_2d_list.append(m.weight.data.abs().cpu().numpy())
             channel_list.append(length)
 
     # BN 1d weight data
@@ -185,7 +186,7 @@ if __name__ == '__main__':
 
     # ======= Visualization ========
     if best_prec1 > 0.:
-        model_name = '{}{}-{} Model (best prec: {})'.format(args.arch, args.depth, args.dataset, best_prec1)
+        model_name = '{}{}-{} Model (best prec: {:.4f})'.format(args.arch, args.depth, args.dataset, best_prec1)
     else:
         model_name = '{}{}-{} Model'.format(args.arch, args.depth, args.dataset)
     plot(bn_1d_list, bn_2d_list, channel_list, args.pruning_rates, model_name, args.y_limit)

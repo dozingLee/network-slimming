@@ -47,6 +47,11 @@ from models import *
     python vggprune_attention_feature.py --dataset cifar100 --depth 19 --percent 0.5
         --model ./logs/attention_sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/attention_sparsity_prune_feature_vgg19_cifar100_percent_0.5
 
+
+    python vggprune_attention_feature.py --dataset cifar100 --depth 19 --percent 0.5
+        --model logs/sparsity_vgg19_cifar100_s_1e_4/model_best.pth.tar --save logs/prune_feature_vgg19_cifar100_percent_0.5
+
+
 '''
 
 # Prune settings
@@ -62,9 +67,9 @@ parser.add_argument('--depth', type=int, default=19,
 parser.add_argument('--percent', type=float, default=0.7,
                     help='scale sparse rate (default: 0.5)')
 parser.add_argument('--model', default='', type=str, metavar='PATH',
-                    help='path to the model (default: none)')
-parser.add_argument('--save', default='./', type=str, metavar='PATH',
-                    help='path to save pruned model (default: none)')
+                    help='path to the model (default: None)')
+parser.add_argument('--save', default='', type=str, metavar='PATH',
+                    help='path to save pruned model (default: None)')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -84,7 +89,7 @@ if args.model:
         args.start_epoch = checkpoint['epoch']
         best_prec1 = checkpoint['best_prec1']
         model.load_state_dict(checkpoint['state_dict'])
-        print("=> loaded checkpoint '{}' (epoch {}) Prec1: {:f}"
+        print("=> loaded checkpoint '{}' (epoch {}) Prec1: {:.4f}"
               .format(args.model, checkpoint['epoch'], best_prec1))
     else:
         print("=> no checkpoint found at '{}'".format(args.model))
@@ -154,9 +159,10 @@ def test(model, test_loader):
             pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
-    print('\nTest set: Accuracy: {}/{} ({:.2f}%)\n'.format(
-        correct, len(test_loader.dataset), 100. * correct / len(test_loader.dataset)))
-    return correct / float(len(test_loader.dataset))
+    test_prec = float(correct) / len(test_loader.dataset)
+    print('\nTest set: Accuracy: {}/{} ({:.4f})\n'
+          .format(correct, len(test_loader.dataset), test_prec))
+    return test_prec
 
 
 if __name__ == '__main__':

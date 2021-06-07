@@ -192,9 +192,10 @@ def test(model):
             pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
-    print('\nTest set: Accuracy: {}/{} ({:.2f}%)\n'.format(
-        correct, len(test_loader.dataset), 100. * correct / len(test_loader.dataset)))
-    return correct / float(len(test_loader.dataset))
+    test_prec = float(correct) / len(test_loader.dataset)
+    print('\nTest set: Accuracy: {}/{} ({:.4f})\n'
+          .format(correct, len(test_loader.dataset), test_prec))
+    return test_prec
 
 
 if __name__ == '__main__':

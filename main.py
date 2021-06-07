@@ -137,6 +137,18 @@ import matplotlib.pyplot as plt
         
     python main.py --refine logs/prune_vgg19_cifar100_percent_0.5/pruned.pth.tar --init-weight
         --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save logs/fine_tuning_vgg19_cifar100_percent_0.5_init
+
+    0.7309
+    python main.py --refine logs/prune_vgg19_cifar100_percent_0.5/pruned.pth.tar --lr 0.05
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save logs/fine_tuning_vgg19_cifar100_percent_0.5_lr_0.05
+    
+    python main.py --refine logs/prune_vgg19_cifar100_feature_percent_0.5/pruned.pth.tar
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save logs/fine_tuning_vgg19_cifar100_feature_percent_0.5
+    
+    
+    python main.py --refine logs/prune_vgg19_cifar10_percent_0.7/pruned.pth.tar 
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save logs/fine_tuning_vgg19_cifar10_percent_0.7
+        
     
 '''
 
