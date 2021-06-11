@@ -13,8 +13,8 @@ from models import *
     
     (1) 70%
     Prune Sparsity VGG19 with 70% proportion for cifar10 (Test accuracy: 19.17%)
-    > python vggprune_expand.py --dataset cifar10 --depth 19 --percent 0.7 
-        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/prune_expand_vgg19_percent_0.7
+    python vggprune_expand.py --dataset cifar10 --depth 19 --percent 0.7 
+        --model ./logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save ./logs/prune_vgg19_cifar10_expand_percent_0.7
     
     0.7321 (origin, not expand the pruned layer)
     python vggprune_expand.py --dataset cifar100 --depth 19 --percent 0.5
@@ -24,7 +24,10 @@ from models import *
     python vggprune_expand.py --dataset cifar100 --depth 19 --percent 0.5
         --model ./logs/sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/prune_expand_more_vgg19_cifar100_percent_0.5
     
-        
+    python vggprune_expand.py --dataset cifar100 --depth 19 --percent 0.6
+        --model logs/sparsity_vgg19_cifar100_s_1e_4/model_best.pth.tar 
+        --save logs/prune_vgg19_cifar100_expand_percent_0.6
+    
 
 '''
 

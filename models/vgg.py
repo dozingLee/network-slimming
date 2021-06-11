@@ -12,10 +12,11 @@ defaultcfg = {
     19: [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512],
 }
 
-
 class vgg(nn.Module):
-    def __init__(self, dataset='cifar10', depth=19, init_weights=True, cfg=None, batch_norm=True):
+    def __init__(self, dataset='cifar10', depth=19, init_weights=True, cfg=None, batch_norm=True, conv_cfg=None):
         super(vgg, self).__init__()
+
+        self.conv_cfg = conv_cfg
         if cfg is None:
             cfg = defaultcfg[depth]
 
@@ -45,11 +46,26 @@ class vgg(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        x = self.feature(x)
+        conv_value = []
+        if self.conv_cfg:
+            conv_idx = 0
+            for k, m in enumerate(self.feature):
+                x = m(x)
+                if isinstance(m, nn.Conv2d):
+                    conv_idx += 1
+                    if conv_idx in self.conv_cfg:
+                        conv_value.append(x)
+        else:
+            x = self.feature(x)
+
         x = nn.AvgPool2d(2)(x)
         x = x.view(x.size(0), -1)
         y = self.classifier(x)
-        return y
+
+        if len(conv_value):
+            return y, conv_value
+        else:
+            return y
 
     def _initialize_weights(self):
         for m in self.modules():
@@ -67,7 +83,7 @@ class vgg(nn.Module):
 
 
 if __name__ == '__main__':
-    net = vgg()
+    net = vgg(conv_cfg=[2, 4, 8, 12])
     x = Variable(torch.FloatTensor(16, 3, 40, 40))
-    y = net(x)
-    print(y.data.shape)
+    y, value = net(x)
+    print(y.data.shape, len(value))

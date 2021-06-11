@@ -51,8 +51,8 @@ from models import *
         --model ./logs/attention_sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/attention_sparsity_prune_feature_vgg19_cifar100_percent_0.5
 
 
-    python vggprune_attention_feature.py --dataset cifar100 --depth 19 --percent 0.5
-        --model logs/sparsity_vgg19_cifar100_s_1e_4/model_best.pth.tar --save logs/prune_feature_vgg19_cifar100_percent_0.5
+    python vggprune_attention_feature_expand.py --dataset cifar100 --depth 19 --percent 0.6
+        --model logs/sparsity_vgg19_cifar100_s_1e_4/model_best.pth.tar --save logs/prune_vgg19_cifar100_feature_expand_percent_0.6
 
 
 '''
@@ -203,7 +203,7 @@ if __name__ == '__main__':
     thre = y[thre_idx]
 
     # Pruned
-    num_pruned = 0
+    num_pruned, num_expand = 0, 0
     cfg = []
     cfg_mask = []
     one_batch = data1.clone()
@@ -213,26 +213,39 @@ if __name__ == '__main__':
             value = one_batch.clone().squeeze(0)
             gammas = activation_based_gamma(value)
             mask = gammas.gt(thre).float().cuda()
-            m.weight.data.mul_(mask)
-            m.bias.data.mul_(mask)
-            cfg.append(int(torch.sum(mask)))
-            cfg_mask.append(mask.clone())
-            num_pruned += mask.shape[0] - torch.sum(mask)
-            print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
-                  format(k, mask.shape[0], int(torch.sum(mask))))
+            count_all = mask.shape[0]
+            count_remain = int(torch.sum(mask))
+            count_pruned = count_all - count_remain
+            if count_pruned / count_all < 0.2:  # 裁剪率小于20%
+                num = int(count_all * 1.2)
+                cfg.append(num)
+                num_expand += num - count_all
+                print('layer index: {:d} \t total channel: {:d} \t expanding channel: {:d}'
+                      .format(k, count_all, num))
+            else:
+                num = int(count_remain * 1.2)
+                cfg.append(num)
+                num_expand += int(count_remain * 0.2)
+                num_pruned += count_pruned
+                print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'
+                      .format(k, count_all, num))
+
         elif isinstance(m, nn.MaxPool2d):
             cfg.append('M')
 
     pruned_ratio = num_pruned / num_total
-    print('Pre-processing Successful! Pruned ratio: ', pruned_ratio)
-
-    acc = test(model, test_loader)
+    expand_ratio = num_expand / num_total
+    all_ratio = pruned_ratio - expand_ratio
+    print('Pre-processing Successful! Pruned ratio: {:4f} \t Expand ratio: {:4f} All ratio: {:4f}'
+          .format(pruned_ratio, expand_ratio, all_ratio))
 
     # new model
     newmodel = vgg(dataset=args.dataset, cfg=cfg)
     if args.cuda:
         newmodel.cuda()
     print(cfg)
+
+    acc = test(newmodel, test_loader)
 
     num_parameters = sum([param.nelement() for param in newmodel.parameters()])
     savepath = os.path.join(args.save, "prune.txt")
@@ -243,42 +256,4 @@ if __name__ == '__main__':
         fp.write("Origin Model accuracy: {:.4f}\n".format(best_prec1))
         fp.write("Test Pruned Model accuracy: {:.4f}".format(acc))
 
-    layer_id_in_cfg = 0
-    start_mask = torch.ones(3)  # initially three channels
-    end_mask = cfg_mask[layer_id_in_cfg]  # the first mask in the output of the next layer (the input of next layer)
-    for [m0, m1] in zip(model.modules(), newmodel.modules()):
-        if isinstance(m0, nn.BatchNorm2d):
-            idx1 = np.squeeze(np.argwhere(np.asarray(end_mask.cpu().numpy())))
-            if idx1.size == 1:
-                idx1 = np.resize(idx1, (1,))
-            m1.weight.data = m0.weight.data[idx1.tolist()].clone()
-            m1.bias.data = m0.bias.data[idx1.tolist()].clone()
-            m1.running_mean = m0.running_mean[idx1.tolist()].clone()  # Calculate the average of the data so far
-            m1.running_var = m0.running_var[idx1.tolist()].clone()  # Calculate the variance of the data so far
-            layer_id_in_cfg += 1  # next cfg
-            start_mask = end_mask.clone()  # next start mask
-            if layer_id_in_cfg < len(cfg_mask):
-                end_mask = cfg_mask[layer_id_in_cfg]  # next end mask
-        elif isinstance(m0, nn.Conv2d):
-            idx0 = np.squeeze(np.argwhere(np.asarray(start_mask.cpu().numpy())))
-            idx1 = np.squeeze(np.argwhere(np.asarray(end_mask.cpu().numpy())))
-            print('In shape: {:d}, Out shape {:d}.'.format(idx0.size, idx1.size))
-            if idx0.size == 1:
-                idx0 = np.resize(idx0, (1,))  # shape: () convert to (1,)
-            if idx1.size == 1:
-                idx1 = np.resize(idx1, (1,))
-            w1 = m0.weight.data[:, idx0.tolist(), :, :].clone()
-            w1 = w1[idx1.tolist(), :, :, :].clone()
-            m1.weight.data = w1.clone()
-        elif isinstance(m0, nn.Linear):
-            idx0 = np.squeeze(np.argwhere(np.asarray(start_mask.cpu().numpy())))
-            if idx0.size == 1:
-                idx0 = np.resize(idx0, (1,))
-            m1.weight.data = m0.weight.data[:, idx0].clone()
-            m1.bias.data = m0.bias.data.clone()
-
-    torch.save({'cfg': cfg, 'state_dict': newmodel.state_dict()}, os.path.join(args.save, 'pruned.pth.tar'))
-
-    print(newmodel)
-    model = newmodel
-    test(model, test_loader)
+    torch.save({'cfg': cfg}, os.path.join(args.save, 'pruned.pth.tar'))

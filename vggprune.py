@@ -14,7 +14,7 @@ from models import *
     (1) 70%
     Prune Sparsity VGG19 with 70% proportion for cifar10
     python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 
-        --model logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save logs/prune_vgg19_cifar10_percent_0.7
+        --model logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save logs/prune_vgg19_cifar10_percent_0.7_2
     
     (2) 50%
     Prune Sparsity VGG19 with 50% proportion for cifar10 (Test accuracy: 93.47%)
@@ -32,8 +32,8 @@ from models import *
         --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.3
         
         
-    python vggprune.py --dataset cifar100 --depth 19 --percent 0.5
-        --model ./logs/sparsity_vgg19_cifar100_s_1e_4/model_best.pth.tar --save ./logs/prune_vgg19_cifar100_percent_0.5
+    python vggprune.py --dataset cifar10 --depth 19 --percent 0.5
+        --model ./logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save ./logs/prune_vgg19_cifar10_percent_0.5
 
 '''
 
@@ -212,6 +212,6 @@ if __name__ == '__main__':
 
     torch.save({'cfg': cfg, 'state_dict': newmodel.state_dict()}, os.path.join(args.save, 'pruned.pth.tar'))
 
-    print(newmodel)
+    # print(newmodel)
     model = newmodel
     test(model)
