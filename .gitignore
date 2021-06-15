@@ -14,5 +14,6 @@
 
 
 # cache
+__pycache__/
 models/__pycache__/
 .../models/__pycache__/

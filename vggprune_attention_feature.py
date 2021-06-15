@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.autograd import Variable
 from torchvision import datasets, transforms
 from models import *
@@ -25,8 +26,8 @@ from models import *
     python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.7
         --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/attention_prune_feature_vgg19_sr_percent_0.7
     
-    python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.7
-        --model logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save logs/fine_tuning_vgg19_cifar10_feature_percent_0.7
+    python vggprune_attention_feature.py --dataset cifar10 --depth 19 --percent 0.7 --test-batch-size 32
+        --model logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save logs/fine_tuning_vgg19_cifar10_feature_3_percent_0.7
 
     
     
@@ -48,12 +49,16 @@ from models import *
         --model ./logs/attention_sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/attention_sparsity_prune_feature_vgg19_cifar100_percent_0.6
 
     python vggprune_attention_feature.py --dataset cifar100 --depth 19 --percent 0.5
-        --model ./logs/attention_sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/attention_sparsity_prune_feature_vgg19_cifar100_percent_0.5
+        --model ./logs/sparsity_vgg19_cifar100_s_1e_4/model_best.pth.tar --save ./logs/attention_vgg19_cifar100_percent_0.5
 
 
     python vggprune_attention_feature.py --dataset cifar100 --depth 19 --percent 0.5
         --model logs/sparsity_vgg19_cifar100_s_1e_4/model_best.pth.tar --save logs/prune_feature_vgg19_cifar100_percent_0.5
 
+    python vggprune_attention_feature.py --dataset cifar100 --depth 19 --percent 0.5
+        --model logs/sparsity_vgg19_cifar100_s_1e_4/model_best.pth.tar --save logs/prune_feature_vgg19_cifar100_percent_0.5
+
+    
 
 '''
 
@@ -61,8 +66,8 @@ from models import *
 parser = argparse.ArgumentParser(description='PyTorch Slimming CIFAR prune')
 parser.add_argument('--dataset', type=str, default='cifar10',
                     help='training dataset (default: cifar10)')
-parser.add_argument('--test-batch-size', type=int, default=256, metavar='N',
-                    help='input batch size for testing (default: 256)')
+parser.add_argument('--test-batch-size', type=int, default=32, metavar='N',
+                    help='input batch size for testing (default: 32)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
 parser.add_argument('--depth', type=int, default=19,
@@ -99,36 +104,63 @@ if args.model:
     # print('Origin model: \r\n', model)
 
 
+def at(x):
+    """
+    :param x: input data ∈ [B, C, H, W]
+        B: batch size
+        C: channel size
+        H: feature map height
+        W: feature map width
+
+        pow(2) -> mean(1) -> view(B, -1) -> normalize
+            pow(2): [B, C, H, W] square each data
+            mean(1): [B, 1, H, W] 1 denotes averaging channel direction
+            view(B, -1): [B, 1 × H × W] batch direction
+            normalize: [B, H × W] N(0, 1) for each data in the batch
+
+    :return: [B, H × W]
+    """
+    # result = F.normalize(x.pow(2).mean(1).view(x.size(0), -1))
+    # del x
+    # torch.cuda.empty_cache()
+    return F.normalize(x.pow(2).mean(1).view(x.size(0), -1))
+
+
+def at_loss(x, y):
+    """
+    :param x: input data1 [B, C, H, W]
+    :param y: input data2 [B, C, H, W]
+
+        [B, C, H, W] -> [B, H × W] -> []
+        1. at(x), at(y)
+        2. mean()
+
+    :return: []
+    """
+    return (at(x) - at(y)).pow(2).mean()
+
+
 # Activation-based gamma
-def activation_based_gamma(weight_data):
-    d1, d2 = weight_data.shape[0], weight_data.shape[1]
+def activation_based_gamma(feature_map):
+    """
+    :param feature_map: [B, C, H, W]
+    :return: [C]
+    """
+    b, c, h, w = feature_map.shape
 
-    # 1. A: feature map data
-    A = weight_data.view(d1, d2, -1).abs()
-    c, h, w = A.shape
-
-    # 2. Fsum(A): sum of values along the channel direction
-    FsumA = torch.zeros(h, w).cuda()
-    for i in range(c):
-        FsumA.add_(A[i])
-
-    # 3. ||Fsum(A)||2: two norm
-    FsumA_norm = torch.linalg.norm(FsumA)
-
-    # 4. F(A) / ||F(A)||2: normalize weight data
-    F_all = FsumA / FsumA_norm
-
-    # 5. F(Aj) / ||F(Aj)||^2 & gamma = ∑ | F(A) / ||F(A)||2 - F(Aj) / ||F(Aj)||2 |
-    gamma = torch.zeros(c)
+    gammas = torch.zeros(c)
     for j in range(c):
-        FAj = FsumA - A[j]
-        FAj_norm = torch.linalg.norm(FAj)
-        Fj = FAj / FAj_norm
-        #         gamma[j] = (F_all - Fj).abs().sum()
-        gamma[j] = torch.linalg.norm(F_all - Fj)
+        feature_map_j = feature_map[:, torch.arange(c) != j, :, :]
+        gammas[j] = at_loss(feature_map, feature_map_j)
+    return gammas
 
-    return gamma
-
+    # gammas = torch.zeros(c)
+    # for j in range(c):
+    #     feature_map_j = feature_map[:, j, :, :].unsqueeze(1)
+    #     gammas[j] = at_loss(feature_map, feature_map - feature_map_j)
+    #     del feature_map_j
+    # torch.cuda.empty_cache()
+    # return gammas
 
 def get_dataloader():
     kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
@@ -173,7 +205,7 @@ if __name__ == '__main__':
 
     # one batch of Dataset
     idx, data_item = next(enumerate(test_loader))
-    data1 = data_item[0][0].clone().unsqueeze(0)  # [1, 3, 32, 32]
+    data1 = data_item[0].clone()  # index 0 means value, index 1 means label [64, 3, 32, 32]
     if args.cuda:
         data1 = data1.cuda()
 
@@ -191,9 +223,9 @@ if __name__ == '__main__':
     for idx, m in enumerate(model.feature):
         one_batch = m(one_batch)
         if isinstance(m, nn.BatchNorm2d):
-            value = one_batch.clone().squeeze(0)
+            value = one_batch.clone()
             gamma = activation_based_gamma(value)
-            size = value.shape[0]
+            size = value.shape[1]
             gamma_list[index:(index + size)] = gamma.clone()
             index += size
 
@@ -241,7 +273,7 @@ if __name__ == '__main__':
         fp.write("Prune ratio: {:.4f}\n".format(pruned_ratio))
         fp.write("Number of parameters: {}\n".format(num_parameters))
         fp.write("Origin Model accuracy: {:.4f}\n".format(best_prec1))
-        fp.write("Test Pruned Model accuracy: {:.4f}".format(acc))
+        fp.write("Pruned Model accuracy: {:.4f}".format(acc))
 
     layer_id_in_cfg = 0
     start_mask = torch.ones(3)  # initially three channels
@@ -279,6 +311,6 @@ if __name__ == '__main__':
 
     torch.save({'cfg': cfg, 'state_dict': newmodel.state_dict()}, os.path.join(args.save, 'pruned.pth.tar'))
 
-    print(newmodel)
+    # print(newmodel)
     model = newmodel
     test(model, test_loader)

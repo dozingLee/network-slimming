@@ -65,8 +65,7 @@ class resnet(nn.Module):
 
         self.inplanes = 16
 
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1,
-                               bias=False)
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1, bias=False)
         self.layer1 = self._make_layer(block, 16, n, cfg = cfg[0:3*n])
         self.layer2 = self._make_layer(block, 32, n, cfg = cfg[3*n:6*n], stride=2)
         self.layer3 = self._make_layer(block, 64, n, cfg = cfg[6*n:9*n], stride=2)

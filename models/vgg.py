@@ -12,6 +12,7 @@ defaultcfg = {
     19: [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512],
 }
 
+
 class vgg(nn.Module):
     def __init__(self, dataset='cifar10', depth=19, init_weights=True, cfg=None, batch_norm=True, conv_cfg=None):
         super(vgg, self).__init__()
@@ -22,11 +23,11 @@ class vgg(nn.Module):
 
         self.feature = self.make_layers(cfg, batch_norm)
 
-        if dataset == 'cifar10':
-            num_classes = 10
-        elif dataset == 'cifar100':
+        num_classes = 10
+        if dataset == 'cifar100':
             num_classes = 100
         self.classifier = nn.Linear(cfg[-1], num_classes)
+
         if init_weights:
             self._initialize_weights()
 

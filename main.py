@@ -19,10 +19,10 @@ import matplotlib.pyplot as plt
 
     (1) Baseline: 
     VGG19 cifar10 (Best accuracy: 0.9391)
-    > python main.py --dataset cifar10 --arch vgg --depth 19 --save ./logs/baseline_vgg19_cifar10
+    python main.py --dataset cifar10 --arch vgg --depth 19 --save ./logs/baseline_vgg19_cifar10_2 --init-weight
     
     VGG19 cifar100 (Best accuracy: 0.7255)
-    > python main.py --dataset cifar100 --arch vgg --depth 19 --save ./logs/baseline_vgg19_cifar100
+    > python main.py --dataset cifar100 --arch vgg --depth 19 --save ./logs/baseline_vgg19_cifar100 --init-weight
     
     ResNet cifar10 (Best accuracy: 0.9507)
     > python main.py --dataset cifar10 --arch resnet --depth 164 --save ./logs/baseline_resnet164_cifar10
@@ -160,6 +160,15 @@ import matplotlib.pyplot as plt
     
     python main.py --refine logs/prune_vgg19_cifar100_feature_expand_percent_0.6/pruned.pth.tar --init-weight
         --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save logs/prune_vgg19_cifar100_feature_expand_percent_0.6
+        
+    
+    python main.py --refine logs/fine_tuning_vgg19_cifar10_feature_3_percent_0.7/pruned.pth.tar --lr 0.15
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save logs/fine_tuning_vgg19_cifar10_feature_4_percent_0.7
+    
+    python main.py --refine logs/prune_feature_vgg19_cifar100_percent_0.5/pruned.pth.tar
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save logs/prune_feature_vgg19_cifar100_percent_0.5
+    
+    
 '''
 
 # Training settings
@@ -253,6 +262,7 @@ else:
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
 # 2. Model: fine-tune the pruned network
+model_cfg = []
 if args.refine:
     checkpoint = torch.load(args.refine)
     model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth, cfg=checkpoint['cfg'])
@@ -371,11 +381,12 @@ if __name__ == '__main__':
         is_best = prec1 > best_prec1    # save the best
         best_prec1 = max(prec1, best_prec1)
 
-        if args.refine:
+        if model_cfg:
             save_checkpoint({
                 'epoch': epoch,
                 'state_dict': model.state_dict(),
                 'best_prec1': best_prec1,
+                'cfg': model_cfg,
                 'optimizer': optimizer.state_dict()
             }, is_best, save_path=args.save)
         else:
@@ -383,7 +394,6 @@ if __name__ == '__main__':
                 'epoch': epoch,
                 'state_dict': model.state_dict(),
                 'best_prec1': best_prec1,
-                'cfg': model_cfg,
                 'optimizer': optimizer.state_dict()
             }, is_best, save_path=args.save)
 

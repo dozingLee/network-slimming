@@ -12,6 +12,7 @@ from torch.autograd import Variable
 import models
 import pandas as pd
 import matplotlib.pyplot as plt
+import utils
 
 '''
     python main_attention_transfer.py 
@@ -36,6 +37,16 @@ import matplotlib.pyplot as plt
         --dataset cifar10 --arch vgg --depth 19 --epochs 160 
         --save logs/attention_transfer_vgg19_cifar10_2_4_8_12_beta_100_alpha_0.9
         --conv-cfg 2 4 8 12 --beta 100 --alpha 0.9
+        
+    
+    python main_attention_transfer.py 
+        --refine logs/prune_feature_vgg19_cifar100_percent_0.5/pruned.pth.tar
+        --large logs/sparsity_vgg19_cifar100_s_1e_4/model_best.pth.tar
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 
+        --save logs/attention_transfer_vgg19_cifar100_2_4_8_12_beta_100_alpha_0.9_2
+        --conv-cfg 2 4 8 12 --beta 100 --alpha 0.9
+    
+    
 '''
 
 # Training settings
@@ -88,54 +99,11 @@ parser.add_argument('--temperature', default=4, type=float, metavar="T",
                     help='Knowledge Distillation temperature')
 
 args = parser.parse_args()
-# print(args)
-
-torch.manual_seed(args.seed)
 args.cuda = not args.no_cuda and torch.cuda.is_available()
-if args.cuda:
-    torch.cuda.manual_seed(args.seed)
+utils.init_seeds(args.seed)
+
 if not os.path.exists(args.save):
     os.makedirs(args.save)
-
-
-def generate_datasets(args):
-    kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
-    if args.dataset == 'cifar10':
-        train_loader = torch.utils.data.DataLoader(
-            datasets.CIFAR10('./data.cifar10', train=True, download=True,
-                             transform=transforms.Compose([
-                                 transforms.Pad(4),
-                                 transforms.RandomCrop(32),
-                                 transforms.RandomHorizontalFlip(),
-                                 transforms.ToTensor(),
-                                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-                             ])),
-            batch_size=args.batch_size, shuffle=True, **kwargs)
-        test_loader = torch.utils.data.DataLoader(
-            datasets.CIFAR10('./data.cifar10', train=False, transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-            ])),
-            batch_size=args.test_batch_size, shuffle=True, **kwargs)
-    else:
-        train_loader = torch.utils.data.DataLoader(
-            datasets.CIFAR100('./data.cifar100', train=True, download=True,
-                              transform=transforms.Compose([
-                                  transforms.Pad(4),
-                                  transforms.RandomCrop(32),
-                                  transforms.RandomHorizontalFlip(),
-                                  transforms.ToTensor(),
-                                  transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-                              ])),
-            batch_size=args.batch_size, shuffle=True, **kwargs)
-        test_loader = torch.utils.data.DataLoader(
-            datasets.CIFAR100('./data.cifar100', train=False, transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-            ])),
-            batch_size=args.test_batch_size, shuffle=True, **kwargs)
-
-    return train_loader, test_loader
 
 
 def generate_models(args):
@@ -157,8 +125,6 @@ def generate_models(args):
                                          conv_cfg=args.conv_cfg)
     if not args.init_weight and 'state_dict' in file_s:
         model_s.load_state_dict(file_s['state_dict'])
-    else:
-        model_s._initialize_weights()
 
     file_t = torch.load(args.large)
     model_t = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth, conv_cfg=args.conv_cfg)
@@ -168,6 +134,7 @@ def generate_models(args):
 
     if args.cuda:
         model_s.cuda(), model_t.cuda()
+
     return model_s, model_t, file_s['cfg']
 
 
@@ -243,39 +210,20 @@ def test(model, data_loader):
     return test_prec, test_loss
 
 
-def save_checkpoint(state, is_best, save_path):
-    torch.save(state, os.path.join(save_path, 'checkpoint.pth.tar'))
-    if is_best:
-        shutil.copyfile(os.path.join(save_path, 'checkpoint.pth.tar'), os.path.join(save_path, 'model_best.pth.tar'))
-
-
-def visualization_record(best_prec, save_path):
-    data = pd.read_csv(os.path.join(save_path, 'record.csv'))
-    line_loss, = plt.plot(data['loss'], 'r-')
-    line_prec, = plt.plot(data['prec'], 'b-')
-    plt.legend([line_loss, line_prec], ['loss', 'accuracy'], loc='upper right')
-    plt.ylabel('value', fontsize=12)
-    plt.xlabel('epoch', fontsize=12)
-    plt.title('Train loss and accuracy (best_prec: {})'.format(best_prec), fontsize=14)
-    plt.savefig(os.path.join(save_path, "record train loss.png"))
-    print('Save the training loss and accuracy successfully.')
-
-
 if __name__ == '__main__':
-    train_loader, test_loader = generate_datasets(args)
+    train_loader, test_loader = utils.get_dataset_loaders(
+        args.dataset, args.batch_size, args.test_batch_size, args.nthread, args.cuda)
 
     model_s, model_t, model_cfg = generate_models(args)
 
     optimizer = optim.SGD(model_s.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     record_file = os.path.join(args.save, 'record.csv')
-    if os.path.exists(record_file):
-        os.remove(record_file)
     with open(record_file, 'w+') as f:
         f.write('epoch,loss,prec\n')
 
     # ====== Training ======
-    best_prec1 = 0.
+    best_prec = 0.
     for epoch in range(args.epochs):
         if epoch in [args.epochs * 0.5, args.epochs * 0.75]:  # decent the learning rate
             for param_group in optimizer.param_groups:
@@ -284,13 +232,13 @@ if __name__ == '__main__':
         train(model_s, model_t, epoch, train_loader)
 
         prec1, loss1 = test(model_s, test_loader)  # process test
-        is_best = prec1 > best_prec1  # save the best
-        best_prec1 = max(prec1, best_prec1)
+        is_best = prec1 > best_prec  # save the best
+        best_prec = max(prec1, best_prec)
 
         save_cfg = {
             'epoch': epoch,
             'state_dict': model_s.state_dict(),
-            'best_prec1': best_prec1,
+            'best_prec': best_prec,
             'cfg': model_cfg,
             'optimizer': optimizer.state_dict(),
             'alpha': args.alpha,
@@ -298,10 +246,10 @@ if __name__ == '__main__':
             'temperature': args.temperature,
             'conv_cfg': args.conv_cfg
         }
-        save_checkpoint(save_cfg, is_best, save_path=args.save)
+        utils.save_checkpoint(save_cfg, is_best, args.save)
 
         with open(record_file, 'a+') as f:
             f.write('{},{:.4f},{:.4f}\n'.format(epoch, loss1, prec1))
 
-    visualization_record(best_prec1, args.save)
-    print("Best accuracy: {:.4f}".format(best_prec1))
+    utils. visualization_record(args.save)
+    print("Best accuracy: {:.4f}".format(best_prec))
