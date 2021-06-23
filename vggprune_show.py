@@ -143,20 +143,19 @@ if __name__ == '__main__':
         os.makedirs(args.save)
     # model
     best_prec1 = 0.
-    if args.model:
-        if os.path.isfile(args.model):
-            print("=> loading checkpoint '{}'".format(args.model))
-            model_file = torch.load(args.model)
-            if 'cfg' in model_file:
-                model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth, cfg=model_file['cfg'])
-            else:
-                model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth)
-            model.load_state_dict(model_file['state_dict'])
-            if 'best_prec1' in model_file:
-                best_prec1 = model_file['best_prec1']
-            print("=> loaded checkpoint '{}'".format(args.model))
+    if os.path.isfile(args.model):
+        print("=> loading checkpoint '{}'".format(args.model))
+        model_file = torch.load(args.model)
+        if 'cfg' in model_file:
+            model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth, cfg=model_file['cfg'])
         else:
-            raise Exception("=> no model file found at '{}'".format(args.model))
+            model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth)
+        model.load_state_dict(model_file['state_dict'])
+        if 'best_prec1' in model_file:
+            best_prec1 = model_file['best_prec1']
+        print("=> loaded checkpoint '{}'".format(args.model))
+    else:
+        raise Exception("=> no model file found at '{}'".format(args.model))
     print(model)
 
     # ======= Handle Data ========
@@ -189,4 +188,5 @@ if __name__ == '__main__':
         model_name = '{}{}-{} Model (best prec: {:.4f})'.format(args.arch, args.depth, args.dataset, best_prec1)
     else:
         model_name = '{}{}-{} Model'.format(args.arch, args.depth, args.dataset)
+
     plot(bn_1d_list, bn_2d_list, channel_list, args.pruning_rates, model_name, args.y_limit)

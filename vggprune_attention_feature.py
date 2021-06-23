@@ -5,8 +5,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from models import *
+import utils
 
 '''
     vggprune_attention_feature.py: Prune VGG19 CIFAR10 Feature by attention-based method
@@ -84,95 +86,21 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 if not os.path.exists(args.save):
     os.makedirs(args.save)
 
-# Model
-model = vgg(dataset=args.dataset, depth=args.depth)
-if args.cuda:
-    model.cuda()
-
-best_prec1 = 0.
-if args.model:
-    if os.path.isfile(args.model):
-        print("=> loading checkpoint '{}'".format(args.model))
-        checkpoint = torch.load(args.model)
-        args.start_epoch = checkpoint['epoch']
-        best_prec1 = checkpoint['best_prec1']
-        model.load_state_dict(checkpoint['state_dict'])
-        print("=> loaded checkpoint '{}' (epoch {}) Prec1: {:.4f}"
-              .format(args.model, checkpoint['epoch'], best_prec1))
-    else:
-        print("=> no checkpoint found at '{}'".format(args.model))
-    # print('Origin model: \r\n', model)
 
 
-def at(x):
-    """
-    :param x: input data ∈ [B, C, H, W]
-        B: batch size
-        C: channel size
-        H: feature map height
-        W: feature map width
 
-        pow(2) -> mean(1) -> view(B, -1) -> normalize
-            pow(2): [B, C, H, W] square each data
-            mean(1): [B, 1, H, W] 1 denotes averaging channel direction
-            view(B, -1): [B, 1 × H × W] batch direction
-            normalize: [B, H × W] N(0, 1) for each data in the batch
-
-    :return: [B, H × W]
-    """
-    # result = F.normalize(x.pow(2).mean(1).view(x.size(0), -1))
-    # del x
-    # torch.cuda.empty_cache()
-    return F.normalize(x.pow(2).mean(1).view(x.size(0), -1))
-
-
-def at_loss(x, y):
-    """
-    :param x: input data1 [B, C, H, W]
-    :param y: input data2 [B, C, H, W]
-
-        [B, C, H, W] -> [B, H × W] -> []
-        1. at(x), at(y)
-        2. mean()
-
-    :return: []
-    """
-    return (at(x) - at(y)).pow(2).mean()
-
-
-# Activation-based gamma
-def activation_based_gamma(feature_map):
-    """
-    :param feature_map: [B, C, H, W]
-    :return: [C]
-    """
-    b, c, h, w = feature_map.shape
-
-    gammas = torch.zeros(c)
-    for j in range(c):
-        feature_map_j = feature_map[:, torch.arange(c) != j, :, :]
-        gammas[j] = at_loss(feature_map, feature_map_j)
-    return gammas
-
-    # gammas = torch.zeros(c)
-    # for j in range(c):
-    #     feature_map_j = feature_map[:, j, :, :].unsqueeze(1)
-    #     gammas[j] = at_loss(feature_map, feature_map - feature_map_j)
-    #     del feature_map_j
-    # torch.cuda.empty_cache()
-    # return gammas
 
 def get_dataloader():
     kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
     if args.dataset == 'cifar10':
-        test_loader = torch.utils.data.DataLoader(
+        test_loader = DataLoader(
             datasets.CIFAR10('./data.cifar10', train=False, transform=transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
             batch_size=args.test_batch_size, shuffle=True, **kwargs)
         return test_loader
     elif args.dataset == 'cifar100':
-        test_loader = torch.utils.data.DataLoader(
+        test_loader = DataLoader(
             datasets.CIFAR100('./data.cifar100', train=False, transform=transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
@@ -200,41 +128,44 @@ def test(model, test_loader):
     return test_prec
 
 
-if __name__ == '__main__':
-    test_loader = get_dataloader()
+def gammas(feature_map):
+    """
+    :param feature_map: [B, C, H, W]
+    :return: [C]
+    """
+    b, c, h, w = feature_map.shape
+    gamma = torch.zeros(c)
+    for j in range(c):
+        feature_map_j = feature_map[:, torch.arange(c) != j, :, :]
+        gamma[j] = utils.at_loss(feature_map, feature_map_j)
+    return gamma
 
-    # one batch of Dataset
-    idx, data_item = next(enumerate(test_loader))
-    data1 = data_item[0].clone()  # index 0 means value, index 1 means label [64, 3, 32, 32]
-    if args.cuda:
-        data1 = data1.cuda()
 
-    # Process
-    # number of channels
+def gammas_threshold(model, batch_data, percent):
     num_total = 0
     for m in model.modules():
         if isinstance(m, nn.BatchNorm2d):
             num_total += m.weight.data.shape[0]
     gamma_list = torch.zeros(num_total)
 
-    # all channels' gamma
-    one_batch = data1.clone()
+    data = batch_data.clone()
     index = 0
     for idx, m in enumerate(model.feature):
-        one_batch = m(one_batch)
+        data = m(data)
         if isinstance(m, nn.BatchNorm2d):
-            value = one_batch.clone()
-            gamma = activation_based_gamma(value)
+            value = data.clone()
+            gamma = gammas(value)
             size = value.shape[1]
             gamma_list[index:(index + size)] = gamma.clone()
             index += size
 
-    # threshold
     y, i = torch.sort(gamma_list)
-    thre_idx = int(num_total * args.percent)
-    thre = y[thre_idx]
+    threshold_index = int(num_total * percent)
+    threshold = y[threshold_index]
+    return threshold, threshold_index
 
-    # Pruned
+
+def gammas_pruned():
     num_pruned = 0
     cfg = []
     cfg_mask = []
@@ -257,6 +188,22 @@ if __name__ == '__main__':
 
     pruned_ratio = num_pruned / num_total
     print('Pre-processing Successful! Pruned ratio: ', pruned_ratio)
+
+
+
+if __name__ == '__main__':
+    test_loader = get_dataloader()
+
+    model, best_prec1 = generate_model(args)
+
+    idx, data_item = next(enumerate(test_loader))
+    data1 = data_item[0].clone()  # index 0 means value[64, 3, 32, 32], index 1 means label
+    if args.cuda:
+        data1 = data1.cuda()
+
+    thre, thre_idx = gammas_threshold(model, data1, args.precent)
+
+
 
     acc = test(model, test_loader)
 

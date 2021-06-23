@@ -46,7 +46,12 @@ import utils
         --save logs/attention_transfer_vgg19_cifar100_2_4_8_12_beta_100_alpha_0.9_2
         --conv-cfg 2 4 8 12 --beta 100 --alpha 0.9
     
-    
+    python main_attention_transfer.py 
+        --refine logs/prune_feature_vgg19_cifar100_percent_0.5/pruned.pth.tar
+        --large logs/sparsity_vgg19_cifar100_s_1e_4/model_best.pth.tar
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 
+        --save logs/attention_transfer_vgg19_cifar100_2_4_8_12_beta_1000_alpha_0.9_2
+        --conv-cfg 2 4 8 12 --beta 1000 --alpha 0.9
 '''
 
 # Training settings
@@ -64,7 +69,9 @@ parser.add_argument('--test-batch-size', type=int, default=256, metavar='N',
 parser.add_argument('--epochs', type=int, default=160, metavar='N',
                     help='number of epochs to train (default: 160)')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
-                    help='  epoch number (useful on restarts)')
+                    help='start epoch number (useful on restarts)')
+parser.add_argument('--nthread', default=1, type=int, metavar="N",
+                    help="number of dataloader working thread (default: 1)")
 parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
                     help='learning rate (default: 0.1)')
 parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
