@@ -145,32 +145,6 @@ def generate_models(args):
     return model_s, model_t, file_s['cfg']
 
 
-def at(x):
-    return F.normalize(x.pow(2).mean(1).view(x.size(0), -1))
-
-
-def at_loss(x, y):
-    return (at(x) - at(y)).pow(2).mean()
-
-
-def distillation(y_s, y_t, label, T, alpha):
-    """
-    :param y_s: student model predict
-    :param y_t: teacher model predict
-    :param label: label
-    :param T: knowledge distillation temperature
-    :param alpha: KD weight rate [0, 1]
-        0 means AT
-        0-1 means AT+KD
-        1 means KD
-    """
-    p = F.log_softmax(y_s / T, dim=1)
-    q = F.softmax(y_t / T, dim=1)
-    l_kl = F.kl_div(p, q, reduction='sum') * (T**2) / y_s.shape[0]
-    l_ce = F.cross_entropy(y_s, label)
-    return l_kl * alpha + l_ce * (1. - alpha)
-
-
 def train(model_s, model_t, epoch, data_loader):
     model_s.train(), model_t.eval()
     for batch_idx, (data, target) in enumerate(data_loader):
@@ -183,8 +157,8 @@ def train(model_s, model_t, epoch, data_loader):
             y_t, g_t = model_t(data)
         y_s, g_s = model_s(data)
 
-        loss_ori = distillation(y_s, y_t, target, args.temperature, args.alpha)
-        loss_groups = [at_loss(x, y).sum() for x, y in zip(g_t, g_s)]
+        loss_ori = utils.distillation(y_s, y_t, target, args.temperature, args.alpha)
+        loss_groups = [utils.at_loss(x, y).sum() for x, y in zip(g_t, g_s)]
         loss = loss_ori + args.beta * sum(loss_groups)
         loss.backward()
 
@@ -221,7 +195,7 @@ if __name__ == '__main__':
     train_loader, test_loader = utils.get_dataset_loaders(
         args.dataset, args.batch_size, args.test_batch_size, args.nthread, args.cuda)
 
-    model_s, model_t, model_cfg = generate_models(args)
+    model_s, model_t, cfg = generate_models(args)
 
     optimizer = optim.SGD(model_s.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
@@ -246,7 +220,7 @@ if __name__ == '__main__':
             'epoch': epoch,
             'state_dict': model_s.state_dict(),
             'best_prec': best_prec,
-            'cfg': model_cfg,
+            'cfg': cfg,
             'optimizer': optimizer.state_dict(),
             'alpha': args.alpha,
             'beta': args.beta,

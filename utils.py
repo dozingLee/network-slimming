@@ -9,10 +9,11 @@ import numpy as np
 import random
 from torch.backends import cudnn
 import torch.nn.functional as F
-
+from torch.autograd import Variable
 from models import vgg
 
 
+# ==== Settings ====
 def init_seeds(seed, acce=False):
     """
     :param seed: random seed
@@ -38,11 +39,25 @@ def init_seeds(seed, acce=False):
         cudnn.benchmark = False
 
 
+# ==== Model ====
+def resume_model(resume_file, model, optimizer):
+    if not os.path.isfile(resume_file):
+        raise ValueError("Resume model file is not found at '{}'".format(resume_file))
+    print("=> loading checkpoint '{}'".format(resume_file))
+    checkpoint = torch.load(resume_file)
+    start_epoch = checkpoint['epoch']
+    best_prec1 = checkpoint['best_prec1']
+    model.load_state_dict(checkpoint['state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    print("=> loaded checkpoint '{}' (epoch {}) Prec1: {:f}"
+          .format(resume_file, start_epoch, best_prec1))
+    return model, optimizer, start_epoch, best_prec1
+
+
 def generate_vgg_model(dataset, depth, model_path, cuda_available):
     model = vgg(dataset=dataset, depth=depth)
     if cuda_available:
         model.cuda()
-
     best_prec1 = 0.
     if os.path.isfile(model_path):
         print("=> loading checkpoint '{}'".format(model_path))
@@ -56,6 +71,7 @@ def generate_vgg_model(dataset, depth, model_path, cuda_available):
     return model, best_prec1
 
 
+# ==== Dataset ====
 def get_test_loader(dataset, test_batch_size, num_thread, cuda_available):
     test_transforms = transforms.Compose([
         transforms.ToTensor(),
@@ -87,20 +103,43 @@ def get_dataset_loaders(dataset, train_batch_size, test_batch_size, num_thread, 
     return train_loader, test_loader
 
 
-def resume_model(resume_file, model, optimizer):
-    if not os.path.isfile(resume_file):
-        raise ValueError("Resume model file is not found at '{}'".format(resume_file))
-    print("=> loading checkpoint '{}'".format(resume_file))
-    checkpoint = torch.load(resume_file)
-    start_epoch = checkpoint['epoch']
-    best_prec1 = checkpoint['best_prec1']
-    model.load_state_dict(checkpoint['state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
-    print("=> loaded checkpoint '{}' (epoch {}) Prec1: {:f}"
-          .format(resume_file, start_epoch, best_prec1))
-    return model, optimizer, start_epoch, best_prec1
+def get_one_batch(data_loader, cuda_available):
+    """
+    :param data_loader: batch size data
+        `idx, data_item = next(enumerate(data_loader))`
+        `data_item[0]`: index 0 means value[64, 3, 32, 32], index 1 means label
+    :param cuda_available: True or False
+    """
+    data_idx, data_item = next(enumerate(data_loader))
+    one_batch = data_item[0].clone()
+    if cuda_available:
+        one_batch = one_batch.cuda()
+    return one_batch
 
 
+# ==== Train & Test ====
+def test(model, test_loader, cuda_available):
+    model.eval()
+    test_loss, correct = 0, 0.
+    for data, target in test_loader:
+        if cuda_available:
+            data, target = data.cuda(), target.cuda()
+        with torch.no_grad():
+            data, target = Variable(data), Variable(target)
+            output = model(data)
+            test_loss += F.cross_entropy(output, target, reduction='sum').item()  # sum up batch loss
+            pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
+            correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+
+    length = len(test_loader.dataset)
+    test_loss /= length
+    test_prec = correct / length
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.4f})\n'
+          .format(test_loss, correct, length, test_prec))
+    return test_prec, test_loss
+
+
+# ==== Record ====
 def save_checkpoint(state, is_best, save_path):
     check_point_path = os.path.join(save_path, 'checkpoint.pth.tar')
     model_best_path = os.path.join(save_path, 'model_best.pth.tar')
@@ -110,17 +149,18 @@ def save_checkpoint(state, is_best, save_path):
 
 
 def visualization_record(save_path):
-    data = pd.read_csv(os.path.join(save_path, 'record.csv'))
+    data = pd.read_csv(os.path.join(save_path, 'train_record.csv'))
     line_loss, = plt.plot(data['loss'], 'r-')
     line_prec, = plt.plot(data['prec'], 'b-')
     plt.legend([line_loss, line_prec], ['loss', 'accuracy'], loc='upper right')
     plt.ylabel('value', fontsize=12)
     plt.xlabel('epoch', fontsize=12)
     plt.title('Train loss and accuracy (best_prec1: {})'.format(max(data['prec'])), fontsize=14)
-    plt.savefig(os.path.join(save_path, "record train loss.png"))
+    plt.savefig(os.path.join(save_path, "train_record.png"))
     print('Save the training loss and accuracy successfully.')
 
 
+# ==== Pruning Method: Attention Transfer ====
 def at(x):
     """
     :param x: input data ∈ [B, C, H, W]
@@ -154,6 +194,38 @@ def at_loss(x, y):
     return (at(x) - at(y)).pow(2).mean()
 
 
+def distillation(y_s, y_t, label, T, alpha):
+    """
+    :param y_s: student model predict
+    :param y_t: teacher model predict
+    :param label: label
+    :param T: knowledge distillation temperature
+    :param alpha: KD weight rate [0, 1]
+        0 means AT
+        0-1 means AT+KD
+        1 means KD
+    """
+    p = F.log_softmax(y_s / T, dim=1)
+    q = F.softmax(y_t / T, dim=1)
+    l_kl = F.kl_div(p, q, reduction='sum') * (T**2) / y_s.shape[0]
+    l_ce = F.cross_entropy(y_s, label)
+    return l_kl * alpha + l_ce * (1. - alpha)
+
+
+def gammas(feature_map):
+    """
+    :param feature_map: [B, C, H, W]
+    :return: [C]
+    """
+    b, c, h, w = feature_map.shape
+    gamma = torch.zeros(c)
+    for j in range(c):
+        feature_map_j = feature_map[:, torch.arange(c) != j, :, :]
+        gamma[j] = at_loss(feature_map, feature_map_j)
+    return gamma
+
+
+# ==== Other utils ====
 def bytes_to_human(n):
     symbols = ('K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
     prefix = {}
@@ -164,3 +236,5 @@ def bytes_to_human(n):
             value = float(n) / prefix[s]
             return '%.1f%s' % (value, s)
     return '%sB' % n
+
+

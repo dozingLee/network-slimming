@@ -3,7 +3,6 @@ import argparse
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 from torchvision import datasets, transforms
 from thop import profile
 from thop import clever_format
@@ -13,31 +12,14 @@ from models import *
 
 '''
     vggprune.py: Prune vgg model with sparsity & Save to the local
-    
-    (1) 70%
-    Prune Sparsity VGG19 with 70% proportion for cifar10
-    python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 
-        --model logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save logs/prune_vgg19_cifar10_percent_0.7_2
-    
-    (2) 50%
-    Prune Sparsity VGG19 with 50% proportion for cifar10 (Test accuracy: 93.47%)
-    > python vggprune.py --dataset cifar10 --depth 19 --percent 0.5 
-        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.5
-    
-    Prune Sparsity VGG19 with 50% proportion for cifar100 (Test accuracy: 1.36%)
-    > python vggprune.py --dataset cifar100 --depth 19 --percent 0.5 
-        --model ./logs/sparsity_vgg19_cifar100_s_1e-4/model_best.pth.tar --save ./logs/prune_vgg19_cifar100_percent_0.5
         
-        
-    (3) 30%
-    Prune Sparsity VGG19 with 30% proportion for cifar10 (Test accuracy: 93.47%)
-    python vggprune.py --dataset cifar10 --depth 19 --percent 0.3 
-        --model ./logs/sparsity_vgg19_cifar10_s_1e-4/model_best.pth.tar --save ./logs/prune_vgg19_percent_0.3
-        
-        
-    python vggprune.py --dataset cifar10 --depth 19 --percent 0.5
-        --model ./logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save ./logs/prune_vgg19_cifar10_percent_0.5_x
+    (1) Attention Transfer Pruning Method
+    python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 --pruning-method at --at-batch-size 24
+        --model logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save logs/at_prune_vgg19_cifar10_percent_0.7_24
 
+    (2) Batch Normalization Pruning Method
+    python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 --pruning-method bn 
+        --model logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save logs/bn_prune_vgg19_cifar10_percent_0.7
 '''
 
 # Prune settings
@@ -49,15 +31,21 @@ parser.add_argument('--test-batch-size', type=int, default=256, metavar='N',
 parser.add_argument('--num-thread', default=1, type=int, metavar="N",
                     help="number of dataloader working thread (default: 1)")
 parser.add_argument('--no-cuda', action='store_true', default=False,
-                    help='disables CUDA training')
+                    help='disables CUDA training (default: False)')
 parser.add_argument('--depth', type=int, default=19,
-                    help='depth of the vgg')
+                    help='depth of the vgg model (default: 19)')
 parser.add_argument('--percent', type=float, default=0.5,
-                    help='scale sparse rate (default: 0.5)')
+                    help='model pruning rate (default: 0.5)')
 parser.add_argument('--model', default='', type=str, metavar='PATH',
                     help='path to the model (default: None)')
 parser.add_argument('--save', default='', type=str, metavar='PATH',
                     help='path to save pruned model (default: None)')
+parser.add_argument('--pruning-method', default='bn', type=str, metavar='METHOD',
+                    help='pruning method: `bn` means batch normalization; '
+                         '`at` means attention transfer (default: bn, other value: at)')
+parser.add_argument('--at-batch-size', type=int, default=32, metavar='N',
+                    help='pruning method `at` is used for dataloader batch size,'
+                         'but more than 32 will not have enough space')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -85,46 +73,91 @@ def bn_threshold(model, percent):
     return thre, thre_index
 
 
-def bn_prune_model(model, percent):
+def bn_prune_model(model, percent, cuda_available):
     threshold, thre_idx = bn_threshold(model, percent)
+    if cuda_available:
+        threshold = threshold.cuda()
     num_pruned, num_total = 0, 0
-    cfg = []
-    cfg_mask = []
+    cfg, cfg_mask = [], []
     for k, m in enumerate(model.modules()):
         if isinstance(m, nn.BatchNorm2d):
             weight_copy = m.weight.data.abs().clone()
             mask = weight_copy.gt(threshold).float()        # if value > threshold: True, else: False
-            num_total += mask.shape[0]
-            num_pruned += mask.shape[0] - torch.sum(mask)   # num of pruned
             m.weight.data.mul_(mask)            # pruned weight
             m.bias.data.mul_(mask)              # pruned bias
             cfg.append(int(torch.sum(mask)))    # int: transfer tensor into numpy
             cfg_mask.append(mask.clone())
+            num_total += mask.shape[0]
+            num_pruned += mask.shape[0] - torch.sum(mask)  # num of pruned
             print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'
                   .format(k, mask.shape[0], int(torch.sum(mask))))
         elif isinstance(m, nn.MaxPool2d):
             cfg.append('M')
     pruned_ratio = num_pruned / num_total
-    print('Preprocess Successfully! Pruned ratio: ', pruned_ratio)
+    print('Preprocess Successfully! Pruned ratio: {}'.format(pruned_ratio))
     print('Pruned cfg: {}'.format(cfg))
     return model, cfg, cfg_mask, pruned_ratio
 
 
-def test(model, test_loader, cuda_available):
-    model.eval()
-    correct = 0
-    for data, target in test_loader:
-        if cuda_available:
-            data, target = data.cuda(), target.cuda()
-        with torch.no_grad():
-            data, target = Variable(data), Variable(target)
-            output = model(data)
-            pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
-            correct += pred.eq(target.data.view_as(pred)).cpu().sum()
-    test_prec = float(correct) / len(test_loader.dataset)
-    print('\nTest set: Accuracy: {}/{} ({:.4f})\n'
-          .format(correct, len(test_loader.dataset), test_prec))
-    return test_prec
+def at_threshold(model, percent, one_batch):
+    """
+    :param model: model cuda
+    :param percent: [0,1]
+    :param one_batch: [batch_size, 3, 32, 32]
+    :return threshold and threshold index
+    """
+    num_total = 0
+    for m in model.modules():
+        if isinstance(m, nn.BatchNorm2d):
+            num_total += m.weight.data.shape[0]
+    gamma_list = torch.zeros(num_total)
+
+    index = 0
+    data = one_batch.clone()
+    for idx, m in enumerate(model.feature):
+        data = m(data)
+        if isinstance(m, nn.BatchNorm2d):
+            value = data.clone()
+            gamma = utils.gammas(value)
+            size = value.shape[1]
+            gamma_list[index:(index + size)] = gamma.clone()
+            index += size
+
+    y, i = torch.sort(gamma_list)
+    threshold_index = int(num_total * percent)
+    threshold = y[threshold_index]
+    return threshold, threshold_index
+
+
+def at_prune_model(model, percent, one_batch, cuda_available):
+    threshold, thre_idx = at_threshold(model, percent, one_batch)
+    if cuda_available:
+        threshold = threshold.cuda()
+    num_pruned, num_total = 0, 0
+    cfg, cfg_mask = [], []
+    data = one_batch.clone()
+    for k, m in enumerate(model.feature):
+        data = m(data)
+        if isinstance(m, nn.BatchNorm2d):
+            value = data.clone().squeeze(0)
+            gammas = utils.gammas(value)
+            if cuda_available:
+                gammas = gammas.cuda()
+            mask = gammas.gt(threshold).float()
+            m.weight.data.mul_(mask)
+            m.bias.data.mul_(mask)
+            cfg.append(int(torch.sum(mask)))
+            cfg_mask.append(mask.clone())
+            num_total += mask.shape[0]
+            num_pruned += mask.shape[0] - torch.sum(mask)
+            print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
+                  format(k, mask.shape[0], int(torch.sum(mask))))
+        elif isinstance(m, nn.MaxPool2d):
+            cfg.append('M')
+    pruned_ratio = num_pruned / num_total
+    print('Preprocess Successfully! Pruned ratio: {}'.format(pruned_ratio))
+    print('Pruned cfg: {}'.format(cfg))
+    return model, cfg, cfg_mask, pruned_ratio
 
 
 def generate_new_model(model, new_model, cfg_mask):
@@ -164,26 +197,28 @@ def generate_new_model(model, new_model, cfg_mask):
     return new_model
 
 
-def save_record(save_path, cfg, origin_model, pruned_model, origin_dict, pruned_dict):
-    input = torch.randn(1, 3, 32, 32).cuda()
+def save_model_record(save_path, cfg, origin_model, pruned_model, origin_dict, pruned_dict, cuda_available):
+    input = torch.randn(1, 3, 32, 32)
+    if cuda_available:
+        input = input.cuda()
     flops1, params1 = profile(origin_model, inputs=(input, ))
     flops2, params2 = profile(pruned_model, inputs=(input, ))
-    # flops2, params2 = 13422134, 2342342
+    origin_dict['FLOPs Real'], origin_dict['Params Real'] = flops1, params1
+    pruned_dict['FLOPs Real'], pruned_dict['Params Real'] = flops2, params2
     origin_dict['FLOPs'], origin_dict['Parameters'] = clever_format([flops1, params1], "%.2f")
     pruned_dict['FLOPs'], pruned_dict['Parameters'] = clever_format([flops2, params2], "%.2f")
     flops_ratio = float(flops1 - flops2) / flops1
     params_ratio = float(params1 - params2) / params1
     origin_dict['FLOPs Pruned'], origin_dict['Params Pruned'] = '-', '-'
-    pruned_dict['FLOPs Pruned'] = '{:.4f}'.format(flops_ratio)
-    pruned_dict['Params Pruned'] = '{:.4f}'.format(params_ratio)
+    pruned_dict['FLOPs Pruned'] = '{:.2f}%'.format(flops_ratio * 100)
+    pruned_dict['Params Pruned'] = '{:.2f}%'.format(params_ratio * 100)
     title_str, origin_str, pruned_str = '', '', ''
     for key in origin_dict.keys():
         title_str += key + ','
         origin_str += '{},'.format(origin_dict[key])
         pruned_str += '{},'.format(pruned_dict[key])
-
     with open(save_path, "w") as fp:
-        fp.write("Configuration: \n{}\n".format(cfg))
+        fp.write("Configuration: \n{}\n".format(cfg).replace(',', '/'))
         fp.write(title_str + '\n')
         fp.write(origin_str + '\n')
         fp.write(pruned_str + '\n')
@@ -197,21 +232,34 @@ if __name__ == '__main__':
     model, best_prec1 = utils.generate_vgg_model(args.dataset, args.depth, args.model, args.cuda)
 
     # ==== prune model ====
-    pruned_model, cfg, cfg_mask, pruned_ratio = bn_prune_model(model, args.percent)
-    acc_pruned = test(pruned_model, test_loader, args.cuda)
+    if args.pruning_method == 'bn':
+        pruned_model, cfg, cfg_mask, pruned_ratio = bn_prune_model(model, args.percent, args.cuda)
+        acc_pruned, _ = utils.test(pruned_model, test_loader, args.cuda)
+    elif args.pruning_method == 'at':
+        data_loader = utils.get_test_loader(args.dataset, args.at_batch_size, args.num_thread, args.cuda)
+        one_batch_data = utils.get_one_batch(data_loader, args.cuda)
+        pruned_model, cfg, cfg_mask, pruned_ratio = at_prune_model(model, args.percent, one_batch_data, args.cuda)
+        acc_pruned, _ = utils.test(pruned_model, test_loader, args.cuda)
+    else:
+        raise ValueError('Pruning Method does not exist.')
 
     # ==== new model ====
     new_model = vgg(dataset=args.dataset, cfg=cfg)
     if args.cuda:
         new_model.cuda()
     new_model = generate_new_model(model, new_model, cfg_mask)
-    acc_new = test(new_model, test_loader, args.cuda)
+    acc_new, _ = utils.test(new_model, test_loader, args.cuda)
     torch.save({'cfg': cfg, 'state_dict': new_model.state_dict()}, os.path.join(args.save, 'pruned.pth.tar'))
 
+    # ==== save pruning record ====
     save_path = os.path.join(args.save, "pruning_record.csv")
     origin_data, pruned_data = {}, {}
     origin_data['Model'] = "vgg{}-{}".format(args.depth, args.dataset)
-    pruned_data['Model'] = origin_data['Model'] + "({}% Pruned)".format(args.percent * 100)
+    pruned_data['Model'] = "{} ({:.0f}% {} Pruned)".format(
+        origin_data['Model'], args.percent * 100, args.pruning_method.upper())
     origin_data['Accuracy'] = best_prec1
-    pruned_data['Accuracy'] = '{:.4f} (validate: {:.4f})'.format(acc_pruned, acc_new)
-    save_record(save_path, cfg, model, new_model, origin_data, pruned_data)
+    if acc_pruned == acc_new:
+        pruned_data['Accuracy'] = '{:.4f}'.format(acc_pruned)
+    else:
+        pruned_data['Accuracy'] = '{:.4f} (validate: {:.4f})'.format(acc_pruned, acc_new)
+    save_model_record(save_path, cfg, model, new_model, origin_data, pruned_data, args.cuda)
