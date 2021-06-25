@@ -11,6 +11,18 @@ import utils
 from thop import profile
 from thop import clever_format
 
+"""
+    python main.py --refine logs/at_prune_vgg19_cifar10_percent_0.7/pruned.pth.tar  --seed 2
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save logs/ft_at_prune_vgg19_cifar10_percent_0.7_seed_2
+        
+    python main.py --refine logs/at_prune_vgg19_cifar100_percent_0.5/pruned.pth.tar  --seed 2
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save logs/ft_at_prune_vgg19_cifar100_percent_0.5_seed_2
+    
+    python main.py --refine logs/at_prune_vgg19_cifar100_percent_0.5/pruned.pth.tar  --seed 2  --not-init-weight
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 
+        --save logs/ft_inherit_at_prune_vgg19_cifar100_percent_0.5_seed_2
+"""
+
 
 parser = argparse.ArgumentParser(description='PyTorch Slimming CIFAR training')
 parser.add_argument('--dataset', type=str, default='cifar10',
@@ -82,6 +94,8 @@ def generate_model(args):
         if args.not_init_weight:
             model.load_state_dict(file['state_dict'])
             print('Pruned model loads important weight successfully!')
+        else:
+            print('Pruned model initialize weight successfully!')
     else:
         model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth)
 
@@ -142,7 +156,7 @@ if __name__ == '__main__':
         args.dataset, args.batch_size, args.test_batch_size, args.nthread, args.cuda)
 
     # ==== Model ====
-    model, model_cfg = generate_model(args)
+    model, cfg = generate_model(args)
 
     # ==== Optimizer ====
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -176,14 +190,15 @@ if __name__ == '__main__':
             'best_prec1': best_prec1,
             'optimizer': optimizer.state_dict()
         }
-        if model_cfg:
-            check_point_dict['cfg'] = model_cfg
+        if cfg:
+            check_point_dict['cfg'] = cfg
         utils.save_checkpoint(check_point_dict, is_best, args.save)
 
         f.write('{},{:.4f},{:.4f}\n'.format(epoch, loss1, prec1))
+    f.close()
 
     # ==== Record ====
-    utils.visualization_record(record_file)
+    utils.visualization_record(args.save)
     model_record_file = os.path.join(args.save, 'model_record.csv')
     record_dict = {'Model': "vgg{}-{}".format(args.depth, args.dataset), 'Accuracy': best_prec1}
     save_model_record(model_record_file, model, record_dict, args.cuda)

@@ -60,7 +60,7 @@ def generate_vgg_model(dataset, depth, model_path, cuda_available):
         model.cuda()
     best_prec1 = 0.
     if os.path.isfile(model_path):
-        print("=> loading checkpoint '{}'".format(model_path))
+        print("=> loading model file '{}'".format(model_path))
         checkpoint = torch.load(model_path)
         best_prec1 = checkpoint['best_prec1']
         model.load_state_dict(checkpoint['state_dict'])
@@ -149,7 +149,7 @@ def save_checkpoint(state, is_best, save_path):
 
 
 def visualization_record(save_path):
-    data = pd.read_csv(os.path.join(save_path, 'train_record.csv'))
+    data = pd.read_csv(os.path.join(save_path, "train_record.csv"))
     line_loss, = plt.plot(data['loss'], 'r-')
     line_prec, = plt.plot(data['prec'], 'b-')
     plt.legend([line_loss, line_prec], ['loss', 'accuracy'], loc='upper right')
@@ -158,6 +158,7 @@ def visualization_record(save_path):
     plt.title('Train loss and accuracy (best_prec1: {})'.format(max(data['prec'])), fontsize=14)
     plt.savefig(os.path.join(save_path, "train_record.png"))
     print('Save the training loss and accuracy successfully.')
+
 
 
 # ==== Pruning Method: Attention Transfer ====

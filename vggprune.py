@@ -14,8 +14,11 @@ from models import *
     vggprune.py: Prune vgg model with sparsity & Save to the local
         
     (1) Attention Transfer Pruning Method
-    python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 --pruning-method at --at-batch-size 24
-        --model logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save logs/at_prune_vgg19_cifar10_percent_0.7_24
+    python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 --pruning-method at
+        --model logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save logs/at_prune_vgg19_cifar10_percent_0.7
+    
+    python vggprune.py --dataset cifar100 --depth 19 --percent 0.5 --pruning-method at
+        --model logs/sparsity_vgg19_cifar100_s_1e_4/model_best.pth.tar --save logs/at_prune_vgg19_cifar100_percent_0.5
 
     (2) Batch Normalization Pruning Method
     python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 --pruning-method bn 
@@ -252,6 +255,7 @@ if __name__ == '__main__':
     torch.save({'cfg': cfg, 'state_dict': new_model.state_dict()}, os.path.join(args.save, 'pruned.pth.tar'))
 
     # ==== save pruning record ====
+    model, best_prec1 = utils.generate_vgg_model(args.dataset, args.depth, args.model, args.cuda)
     save_path = os.path.join(args.save, "pruning_record.csv")
     origin_data, pruned_data = {}, {}
     origin_data['Model'] = "vgg{}-{}".format(args.depth, args.dataset)
