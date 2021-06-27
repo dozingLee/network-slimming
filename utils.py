@@ -10,8 +10,7 @@ import random
 from torch.backends import cudnn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from models import vgg
-
+import models
 
 # ==== Settings ====
 def init_seeds(seed, acce=False):
@@ -54,20 +53,19 @@ def resume_model(resume_file, model, optimizer):
     return model, optimizer, start_epoch, best_prec1
 
 
-def generate_vgg_model(dataset, depth, model_path, cuda_available):
-    model = vgg(dataset=dataset, depth=depth)
+def load_model(model_name, dataset, depth, model_path, cuda_available):
+    model = models.__dict__[model_name](dataset=dataset, depth=depth)
     if cuda_available:
         model.cuda()
-    best_prec1 = 0.
-    if os.path.isfile(model_path):
-        print("=> loading model file '{}'".format(model_path))
-        checkpoint = torch.load(model_path)
-        best_prec1 = checkpoint['best_prec1']
-        model.load_state_dict(checkpoint['state_dict'])
-        print("=> loaded checkpoint '{}' (epoch {}) Prec1: {:.4f}"
-              .format(model_path, checkpoint['epoch'], best_prec1))
-    else:
+    if not os.path.isfile(model_path):
         raise ValueError("=> no model file found at '{}'".format(model_path))
+    best_prec1 = 0.
+    print("=> loading model file '{}'".format(model_path))
+    checkpoint = torch.load(model_path)
+    best_prec1 = checkpoint['best_prec1']
+    model.load_state_dict(checkpoint['state_dict'])
+    print("=> loaded checkpoint '{}' (epoch {}) Prec1: {:.4f}"
+          .format(model_path, checkpoint['epoch'], best_prec1))
     return model, best_prec1
 
 
@@ -158,7 +156,6 @@ def visualization_record(save_path):
     plt.title('Train loss and accuracy (best_prec1: {})'.format(max(data['prec'])), fontsize=14)
     plt.savefig(os.path.join(save_path, "train_record.png"))
     print('Save the training loss and accuracy successfully.')
-
 
 
 # ==== Pruning Method: Attention Transfer ====

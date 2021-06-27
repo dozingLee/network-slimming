@@ -6,9 +6,10 @@ import torch.nn as nn
 from torchvision import datasets, transforms
 from thop import profile
 from thop import clever_format
-import utils
-from models import *
 
+import models
+import utils
+from models import channel_selection
 
 '''
     vggprune.py: Prune vgg model with sparsity & Save to the local
@@ -23,10 +24,25 @@ from models import *
     (2) Batch Normalization Pruning Method
     python vggprune.py --dataset cifar10 --depth 19 --percent 0.7 --pruning-method bn 
         --model logs/sparsity_vgg19_cifar10_s_1e_4/model_best.pth.tar --save logs/bn_prune_vgg19_cifar10_percent_0.7
+    
+    python prune.py --dataset cifar100 --depth 19 --percent 0.5 --pruning-method bn
+        --model logs/sparsity_vgg19_cifar100_s_1e_4/model_best.pth.tar --save logs/bn_prune_vgg19_cifar100_percent_0.5_x
+        
+    
+    resnet
+    python prune.py --arch resnet --dataset cifar10 --depth 164 --percent 0.4 --pruning-method bn
+        --model logs/sparsity_resnet164_cifar10_s_1e_4/model_best.pth.tar
+        --save logs/bn_prune_resnet164_cifar10_percent_0.4
+    
+    python prune.py --arch resnet --dataset cifar10 --depth 164 --percent 0.4 --pruning-method bn
+        --model logs/sparsity_resnet164_cifar10_s_1e_4/model_best.pth.tar 
+        --save logs/bn_prune_resnet164_cifar10_percent_0.4
 '''
 
 # Prune settings
 parser = argparse.ArgumentParser(description='PyTorch Network Slimming Pruning')
+parser.add_argument('--arch', default='vgg', type=str,
+                    help='architecture to use `vgg`, `resnet`, `densenet` (default: vgg)')
 parser.add_argument('--dataset', type=str, default='cifar10',
                     help='training dataset (default: cifar10)')
 parser.add_argument('--test-batch-size', type=int, default=256, metavar='N',
@@ -163,7 +179,7 @@ def at_prune_model(model, percent, one_batch, cuda_available):
     return model, cfg, cfg_mask, pruned_ratio
 
 
-def generate_new_model(model, new_model, cfg_mask):
+def generate_new_vgg_model(model, new_model, cfg_mask):
     layer_id_in_cfg = 0
     start_mask = torch.ones(3)              # initial channel: 3
     end_mask = cfg_mask[layer_id_in_cfg]    #
@@ -183,7 +199,7 @@ def generate_new_model(model, new_model, cfg_mask):
         elif isinstance(m0, nn.Conv2d):
             idx0 = np.squeeze(np.argwhere(np.asarray(start_mask.cpu().numpy())))
             idx1 = np.squeeze(np.argwhere(np.asarray(end_mask.cpu().numpy())))
-            print('In shape: {:d}, Out shape {:d}.'.format(idx0.size, idx1.size))
+            # print('In shape: {:d}, Out shape {:d}.'.format(idx0.size, idx1.size))
             if idx0.size == 1:
                 idx0 = np.resize(idx0, (1,))
             if idx1.size == 1:
@@ -197,6 +213,86 @@ def generate_new_model(model, new_model, cfg_mask):
                 idx0 = np.resize(idx0, (1,))
             m1.weight.data = m0.weight.data[:, idx0].clone()
             m1.bias.data = m0.bias.data.clone()
+    print('Generate new VGG Model successfully！')
+    return new_model
+
+
+def generate_new_resnet_model(model, new_model, cfg_mask):
+    old_modules = list(model.modules())
+    new_modules = list(new_model.modules())
+    layer_id_in_cfg = 0
+    start_mask = torch.ones(3)
+    end_mask = cfg_mask[layer_id_in_cfg]
+    conv_count = 0
+
+    for layer_id in range(len(old_modules)):
+        m0, m1 = old_modules[layer_id], new_modules[layer_id]
+        if isinstance(m0, nn.BatchNorm2d):
+            idx1 = np.squeeze(np.argwhere(np.asarray(end_mask.cpu().numpy())))
+            if idx1.size == 1:
+                idx1 = np.resize(idx1, (1,))
+            if isinstance(old_modules[layer_id + 1], channel_selection):
+                # If the next layer is the channel selection layer,
+                # then the current batchnorm 2d layer won't be pruned.
+                m1.weight.data = m0.weight.data.clone()
+                m1.bias.data = m0.bias.data.clone()
+                m1.running_mean = m0.running_mean.clone()
+                m1.running_var = m0.running_var.clone()
+
+                # We need to set the channel selection layer.
+                m2 = new_modules[layer_id + 1]
+                m2.indexes.data.zero_()
+                m2.indexes.data[idx1.tolist()] = 1.0
+
+                layer_id_in_cfg += 1
+                start_mask = end_mask.clone()
+                if layer_id_in_cfg < len(cfg_mask):
+                    end_mask = cfg_mask[layer_id_in_cfg]
+            else:
+                m1.weight.data = m0.weight.data[idx1.tolist()].clone()
+                m1.bias.data = m0.bias.data[idx1.tolist()].clone()
+                m1.running_mean = m0.running_mean[idx1.tolist()].clone()
+                m1.running_var = m0.running_var[idx1.tolist()].clone()
+                layer_id_in_cfg += 1
+                start_mask = end_mask.clone()
+                if layer_id_in_cfg < len(cfg_mask):  # do not change in Final FC
+                    end_mask = cfg_mask[layer_id_in_cfg]
+        elif isinstance(m0, nn.Conv2d):
+            if conv_count == 0:
+                m1.weight.data = m0.weight.data.clone()
+                conv_count += 1
+                continue
+            if isinstance(old_modules[layer_id-1], channel_selection) or isinstance(old_modules[layer_id-1], nn.BatchNorm2d):
+                # This convers the convolutions in the residual block.
+                # The convolutions are either after the channel selection layer or after the batch normalization layer.
+                conv_count += 1
+                idx0 = np.squeeze(np.argwhere(np.asarray(start_mask.cpu().numpy())))
+                idx1 = np.squeeze(np.argwhere(np.asarray(end_mask.cpu().numpy())))
+                # print('In shape: {:d}, Out shape {:d}.'.format(idx0.size, idx1.size))
+                if idx0.size == 1:
+                    idx0 = np.resize(idx0, (1,))
+                if idx1.size == 1:
+                    idx1 = np.resize(idx1, (1,))
+                w1 = m0.weight.data[:, idx0.tolist(), :, :].clone()
+
+                # If the current convolution is not the last convolution in the residual block, then we can change the
+                # number of output channels. Currently we use `conv_count` to detect whether it is such convolution.
+                if conv_count % 3 != 1:
+                    w1 = w1[idx1.tolist(), :, :, :].clone()
+                m1.weight.data = w1.clone()
+                continue
+
+            # We need to consider the case where there are downsampling convolutions.
+            # For these convolutions, we just copy the weights.
+            m1.weight.data = m0.weight.data.clone()
+        elif isinstance(m0, nn.Linear):
+            idx0 = np.squeeze(np.argwhere(np.asarray(start_mask.cpu().numpy())))
+            if idx0.size == 1:
+                idx0 = np.resize(idx0, (1,))
+
+            m1.weight.data = m0.weight.data[:, idx0].clone()
+            m1.bias.data = m0.bias.data.clone()
+    print('Generate new RseNet Model successfully！')
     return new_model
 
 
@@ -221,7 +317,7 @@ def save_model_record(save_path, cfg, origin_model, pruned_model, origin_dict, p
         origin_str += '{},'.format(origin_dict[key])
         pruned_str += '{},'.format(pruned_dict[key])
     with open(save_path, "w") as fp:
-        fp.write("Configuration: \n{}\n".format(cfg).replace(',', '/'))
+        fp.write("Configuration,{}\n".format(str(cfg).replace(',', '/')))
         fp.write(title_str + '\n')
         fp.write(origin_str + '\n')
         fp.write(pruned_str + '\n')
@@ -232,7 +328,7 @@ if __name__ == '__main__':
     test_loader = utils.get_test_loader(args.dataset, args.test_batch_size, args.num_thread, args.cuda)
 
     # ==== model ====
-    model, best_prec1 = utils.generate_vgg_model(args.dataset, args.depth, args.model, args.cuda)
+    model, best_prec1 = utils.load_model(args.arch, args.dataset, args.depth, args.model, args.cuda)
 
     # ==== prune model ====
     if args.pruning_method == 'bn':
@@ -247,21 +343,25 @@ if __name__ == '__main__':
         raise ValueError('Pruning Method does not exist.')
 
     # ==== new model ====
-    new_model = vgg(dataset=args.dataset, cfg=cfg)
+    new_model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth, cfg=cfg)
     if args.cuda:
         new_model.cuda()
-    new_model = generate_new_model(model, new_model, cfg_mask)
+    if args.arch == 'vgg':
+        new_model = generate_new_vgg_model(model, new_model, cfg_mask)
+    elif args.arch == 'resnet':
+        new_model = generate_new_resnet_model(model, new_model, cfg_mask)
     acc_new, _ = utils.test(new_model, test_loader, args.cuda)
     torch.save({'cfg': cfg, 'state_dict': new_model.state_dict()}, os.path.join(args.save, 'pruned.pth.tar'))
 
     # ==== save pruning record ====
-    model, best_prec1 = utils.generate_vgg_model(args.dataset, args.depth, args.model, args.cuda)
     save_path = os.path.join(args.save, "pruning_record.csv")
     origin_data, pruned_data = {}, {}
     origin_data['Model'] = "vgg{}-{}".format(args.depth, args.dataset)
     pruned_data['Model'] = "{} ({:.0f}% {} Pruned)".format(
         origin_data['Model'], args.percent * 100, args.pruning_method.upper())
-    origin_data['Accuracy'] = best_prec1
+    origin_data['Test Error(%)'] = '{:.2f}'.format((1 - best_prec1) * 100)
+    pruned_data['Test Error(%)'] = '{:.2f}'.format((1 - acc_pruned) * 100)
+    origin_data['Accuracy'] = '{:.4f}'.format(best_prec1)
     if acc_pruned == acc_new:
         pruned_data['Accuracy'] = '{:.4f}'.format(acc_pruned)
     else:

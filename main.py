@@ -12,15 +12,41 @@ from thop import profile
 from thop import clever_format
 
 """
-    python main.py --refine logs/at_prune_vgg19_cifar10_percent_0.7/pruned.pth.tar  --seed 2
-        --dataset cifar10 --arch vgg --depth 19 --epochs 160 --save logs/ft_at_prune_vgg19_cifar10_percent_0.7_seed_2
+    python main.py --refine logs/at_prune_vgg19_cifar10_percent_0.7/pruned.pth.tar  --seed 2 --not-init-weight
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 
+        --save logs/ft_inherit_at_prune_vgg19_cifar10_percent_0.7_seed_2
         
     python main.py --refine logs/at_prune_vgg19_cifar100_percent_0.5/pruned.pth.tar  --seed 2
         --dataset cifar100 --arch vgg --depth 19 --epochs 160 --save logs/ft_at_prune_vgg19_cifar100_percent_0.5_seed_2
     
     python main.py --refine logs/at_prune_vgg19_cifar100_percent_0.5/pruned.pth.tar  --seed 2  --not-init-weight
         --dataset cifar100 --arch vgg --depth 19 --epochs 160 
-        --save logs/ft_inherit_at_prune_vgg19_cifar100_percent_0.5_seed_2
+        --save logs/ft_inherit_at_prune_vgg19_cifar100_percent_0.5_seed_2_lr_0.1
+    
+    python main.py --refine logs/at_prune_vgg19_cifar100_percent_0.5/pruned.pth.tar  --seed 2  --not-init-weight
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --lr 0.15
+        --save logs/ft_inherit_at_prune_vgg19_cifar100_percent_0.5_seed_2_lr_0.15
+    
+    python main.py --refine logs/at_prune_vgg19_cifar100_percent_0.5/pruned.pth.tar  --seed 2  --not-init-weight
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160 --lr 0.075
+        --save logs/ft_inherit_at_prune_vgg19_cifar100_percent_0.5_seed_2_lr_0.075
+    
+    python main.py --refine logs/bn_prune_vgg19_cifar100_percent_0.5/pruned.pth.tar  --seed 2  --not-init-weight
+        --dataset cifar100 --arch vgg --depth 19 --epochs 160
+        --save logs/ft_inherit_bn_prune_vgg19_cifar100_percent_0.5_seed_2
+    
+    python main.py --refine logs/bn_prune_vgg19_cifar10_percent_0.7/pruned.pth.tar  --seed 2 --not-init-weight
+        --dataset cifar10 --arch vgg --depth 19 --epochs 160 
+        --save logs/ft_inherit_bn_prune_vgg19_cifar10_percent_0.7_seed_2_x
+    
+    python main.py -sr --s 0.00001 --dataset cifar10 --arch resnet --depth 164 --save logs/sparsity_resnet_cifar10_s_1e_4
+    
+    python main.py -sr --s 0.00001 --dataset cifar100 --arch resnet --depth 164 --save logs/sparsity_resnet_cifar100_s_1e_4
+    
+    resnet fine-tune
+    python main.py --refine logs/bn_prune_resnet164_cifar10_percent_0.4/pruned.pth.tar  --log-interval 50
+        --dataset cifar10 --arch resnet --depth 164 --epochs 160 --seed 2 --not-init-weight
+        --save logs/ft_inherit_bn_resnet164_vgg19_cifar10_percent_0.4_seed_2
 """
 
 
