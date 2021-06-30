@@ -47,6 +47,10 @@ from thop import clever_format
     python main.py --refine logs/bn_prune_resnet164_cifar10_percent_0.4/pruned.pth.tar  --log-interval 50
         --dataset cifar10 --arch resnet --depth 164 --epochs 160 --seed 2 --not-init-weight
         --save logs/ft_inherit_bn_resnet164_vgg19_cifar10_percent_0.4_seed_2
+    
+    python main.py --refine logs/bn_prune_resnet164_cifar10_percent_0.6/pruned.pth.tar  --log-interval 50
+        --dataset cifar10 --arch resnet --depth 164 --epochs 160 --seed 2 --not-init-weight
+        --save logs/ft_inherit_bn_resnet164_vgg19_cifar10_percent_0.6_seed_2
 """
 
 
@@ -161,10 +165,10 @@ def train(epoch):
 
 
 def save_model_record(save_path, model, model_dict, cuda_available):
-    input = torch.randn(1, 3, 32, 32)
+    data = torch.randn(1, 3, 32, 32)
     if cuda_available:
-        input = input.cuda()
-    flops, params = profile(model, inputs=(input, ))
+        data = data.cuda()
+    flops, params = profile(model, inputs=(data, ))
     model_dict['FLOPs Real'], model_dict['Params Real'] = flops, params
     model_dict['FLOPs'], model_dict['Parameters'] = clever_format([flops, params], "%.2f")
     title_str, model_str = '', ''

@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import models
 
+
 # ==== Settings ====
 def init_seeds(seed, acce=False):
     """
@@ -131,7 +132,7 @@ def test(model, test_loader, cuda_available):
 
     length = len(test_loader.dataset)
     test_loss /= length
-    test_prec = correct / length
+    test_prec = float(correct) / length
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.4f})\n'
           .format(test_loss, correct, length, test_prec))
     return test_prec, test_loss
