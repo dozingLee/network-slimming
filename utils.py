@@ -40,18 +40,19 @@ def init_seeds(seed, acce=False):
 
 
 # ==== Model ====
-def resume_model(resume_file, model, optimizer):
+def resume_model(resume_file):
     if not os.path.isfile(resume_file):
         raise ValueError("Resume model file is not found at '{}'".format(resume_file))
     print("=> loading checkpoint '{}'".format(resume_file))
     checkpoint = torch.load(resume_file)
     start_epoch = checkpoint['epoch']
     best_prec1 = checkpoint['best_prec1']
-    model.load_state_dict(checkpoint['state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
+    state_dict = checkpoint['state_dict']
+    opti_dict = checkpoint['optimizer']
+    cfg = checkpoint['cfg']
     print("=> loaded checkpoint '{}' (epoch {}) Prec1: {:f}"
           .format(resume_file, start_epoch, best_prec1))
-    return model, optimizer, start_epoch, best_prec1
+    return state_dict, opti_dict, start_epoch, best_prec1, cfg
 
 
 def load_model(model_name, dataset, depth, model_path, cuda_available):

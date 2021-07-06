@@ -41,7 +41,8 @@ from thop import clever_format
     
     python main.py -sr --s 0.00001 --dataset cifar10 --arch resnet --depth 164 --save logs/sparsity_resnet_cifar10_s_1e_4
     
-    python main.py -sr --s 0.00001 --dataset cifar100 --arch resnet --depth 164 --save logs/sparsity_resnet_cifar100_s_1e_4
+    python main.py -sr --s 0.00001 --datas
+    et cifar100 --arch resnet --depth 164 --save logs/sparsity_resnet_cifar100_s_1e_4
     
     resnet fine-tune
     python main.py --refine logs/bn_prune_resnet164_cifar10_percent_0.4/pruned.pth.tar  --log-interval 50
@@ -51,6 +52,19 @@ from thop import clever_format
     python main.py --refine logs/bn_prune_resnet164_cifar10_percent_0.6/pruned.pth.tar  --log-interval 50
         --dataset cifar10 --arch resnet --depth 164 --epochs 160 --seed 2 --not-init-weight
         --save logs/ft_inherit_bn_resnet164_vgg19_cifar10_percent_0.6_seed_2
+    
+    python main.py --refine logs/at_prune_resnet164_cifar10_percent_0.4/pruned.pth.tar  --log-interval 50
+        --dataset cifar10 --arch resnet --depth 164 --epochs 160 --seed 2 --not-init-weight
+        --save logs/ft_inherit_at_resnet164_cifar10_percent_0.4_seed_2
+    
+    python main.py --refine logs/at_prune_resnet164_cifar10_percent_0.6/pruned.pth.tar  --log-interval 50
+        --dataset cifar10 --arch resnet --depth 164 --epochs 160 --seed 2 --not-init-weight
+        --save logs/ft_inherit_at_resnet164_cifar10_percent_0.6_seed_2
+    
+    Resume
+    python main.py --resume logs/ft_inherit_at_resnet164_cifar10_percent_0.6_seed_2/checkpoint.pth.tar  --log-interval 50
+        --dataset cifar10 --arch resnet --depth 164 --epochs 160 --seed 2 --not-init-weight
+        --save logs/ft_inherit_at_resnet164_cifar10_percent_0.6_seed_2_x
 """
 
 
@@ -100,7 +114,7 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 utils.init_seeds(args.seed)
 
 
-def generate_model(args):
+def generate_model(args, model_cfg=None):
     """
     :param args: all parameters
         if args.refine:
@@ -110,7 +124,6 @@ def generate_model(args):
         else:
             model automatically init weight
     """
-    model_cfg = []
     if args.refine:
         file = torch.load(args.refine)
         if 'cfg' not in file:
@@ -127,8 +140,10 @@ def generate_model(args):
         else:
             print('Pruned model initialize weight successfully!')
     else:
-        model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth)
-
+        if model_cfg:
+            model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth, cfg=model_cfg)
+        else:
+            model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth)
     if args.cuda:
         model.cuda()
 
@@ -181,28 +196,31 @@ def save_model_record(save_path, model, model_dict, cuda_available):
 
 
 if __name__ == '__main__':
+    # ---- record data ----
+    if not os.path.exists(args.save):
+        os.makedirs(args.save)
+
     # ==== Dataset ====
     train_loader, test_loader = utils.get_dataset_loaders(
         args.dataset, args.batch_size, args.test_batch_size, args.nthread, args.cuda)
 
     # ==== Model ====
-    model, cfg = generate_model(args)
-
-    # ==== Optimizer ====
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-
-    # ---- record data ----
-    if not os.path.exists(args.save):
-        os.makedirs(args.save)
-
     start_epoch, best_prec1 = 0, 0.
     record_file = os.path.join(args.save, 'train_record.csv')
     if args.resume:
-        model, optimizer, start_epoch, best_prec1 = utils.resume_model(args.resume, model, optimizer)
+        state_dict, opti_dict, start_epoch, best_prec1, resume_cfg = utils.resume_model(args.resume)
         f = open(record_file, 'a+')
+        model, cfg = generate_model(args, model_cfg=resume_cfg)
+        model.load_state_dict(state_dict)
     else:
         f = open(record_file, 'w+')
         f.write('epoch,loss,prec\n')
+        model, cfg = generate_model(args)
+
+    # ==== Optimizer ====
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    if args.resume:
+        optimizer.load_state_dict(opti_dict)
 
     # ====== Training ======
     for epoch in range(start_epoch, args.epochs):
@@ -230,6 +248,6 @@ if __name__ == '__main__':
     # ==== Record ====
     utils.visualization_record(args.save)
     model_record_file = os.path.join(args.save, 'model_record.csv')
-    record_dict = {'Model': "vgg{}-{}".format(args.depth, args.dataset), 'Accuracy': best_prec1}
+    record_dict = {'Model': "{}{}-{}".format(args.arch, args.depth, args.dataset), 'Accuracy': best_prec1}
     save_model_record(model_record_file, model, record_dict, args.cuda)
     print("Best accuracy: {:.4f}".format(best_prec1))

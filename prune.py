@@ -35,14 +35,18 @@ from models import channel_selection
         --model logs/sparsity_resnet164_cifar10_s_1e_4/model_best.pth.tar
         --save logs/bn_prune_resnet164_cifar10_percent_0.4
     
-    python prune.py --arch resnet --dataset cifar10 --depth 164 --percent 0.4 --pruning-method bn
+    python prune.py --arch resnet --dataset cifar10 --depth 164 --percent 0.4 --pruning-method at
         --model logs/sparsity_resnet164_cifar10_s_1e_4/model_best.pth.tar 
-        --save logs/bn_prune_resnet164_cifar10_percent_0.4
+        --save logs/at_prune_resnet164_cifar10_percent_0.4 --at-batch-size 8
         
     python prune.py --arch resnet --dataset cifar10 --depth 164 --percent 0.4 --pruning-method at
         --model logs/sparsity_resnet164_cifar10_s_1e_4/model_best.pth.tar 
         --save logs/at_prune_resnet164_cifar10_percent_0.4
     
+    python prune.py --arch resnet --dataset cifar10 --depth 164 --percent 0.6 --pruning-method at
+        --model logs/sparsity_resnet164_cifar10_s_1e_4/model_best.pth.tar 
+        --save logs/at_prune_resnet164_cifar10_percent_0.6 --at-batch-size 8
+    
     python prune.py --arch resnet --dataset cifar100 --depth 164 --percent 0.4 --pruning-method bn
         --model logs/sparsity_resnet164_cifar100_s_1e_4/model_best.pth.tar 
         --save logs/bn_prune_resnet164_cifar100_percent_0.4
@@ -50,6 +54,10 @@ from models import channel_selection
     python prune.py --arch resnet --dataset cifar100 --depth 164 --percent 0.4 --pruning-method bn
         --model logs/sparsity_resnet164_cifar100_s_1e_4/model_best.pth.tar 
         --save logs/bn_prune_resnet164_cifar100_percent_0.4
+    
+    python prune.py --arch resnet --dataset cifar10 --depth 164 --percent 0.6 --pruning-method at
+        --model logs/sparsity_resnet164_cifar10_s_1e_4/model_best.pth.tar 
+        --save logs/at_prune_resnet164_cifar10_percent_0.6 --at-batch-size 8
     
     python prune.py --arch resnet --dataset cifar10 --depth 164 --percent 0.6 --pruning-method bn
         --model logs/sparsity_resnet164_cifar10_s_1e_4/model_best.pth.tar 

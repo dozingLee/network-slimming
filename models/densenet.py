@@ -77,8 +77,7 @@ class densenet(nn.Module):
         # self.inplanes is a global variable used across multiple
         # helper functions
         self.inplanes = growthRate * 2
-        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=3, padding=1,
-                               bias=False)
+        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=3, padding=1, bias=False)
         self.dense1 = self._make_denseblock(block, n, cfg[0:n])
         self.trans1 = self._make_transition(compressionRate, cfg[n])
         self.dense2 = self._make_denseblock(block, n, cfg[n + 1:2 * n + 1])

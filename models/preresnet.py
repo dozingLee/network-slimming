@@ -60,7 +60,7 @@ class Bottleneck(nn.Module):
         """
             record BatchNorm2d output
         """
-        return [self.data1, self.dat2, self.data3]
+        return [self.data1, self.data2, self.data3]
 
     def mask(self, index, cfg_mask):
         if index == 0:

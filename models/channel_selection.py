@@ -11,7 +11,7 @@ class channel_selection(nn.Module):
     def __init__(self, num_channels):
         """
         Initialize the `indexes` with all one vector with the length same as the number of channels.
-        During pruning, the places in `indexes` which correpond to the channels to be pruned will be set to 0.
+        During pruning, the places in `indexes` which corresponds to the channels to be pruned will be set to 0.
         """
         super(channel_selection, self).__init__()
         self.indexes = nn.Parameter(torch.ones(num_channels))
