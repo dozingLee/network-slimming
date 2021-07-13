@@ -15,7 +15,6 @@ class Bottleneck(nn.Module):
 
     def __init__(self, inplanes, planes, cfg, stride=1, down_sample=None):
         super(Bottleneck, self).__init__()
-        self.data1, self.data2, self.data3 = [], [], []
         self.bn1 = nn.BatchNorm2d(inplanes)
         self.select = channel_selection(inplanes)
         self.conv1 = nn.Conv2d(cfg[0], cfg[1], kernel_size=1, bias=False)
@@ -32,20 +31,17 @@ class Bottleneck(nn.Module):
 
         # group1
         out = self.bn1(x)
-        self.data1 = out
         out = self.select(out)
         out = self.relu(out)
         out = self.conv1(out)
 
         # group2
         out = self.bn2(out)
-        self.data2 = out
         out = self.relu(out)
         out = self.conv2(out)
 
         # group3
         out = self.bn3(out)
-        self.data3 = out
         out = self.relu(out)
         out = self.conv3(out)
 
@@ -55,12 +51,6 @@ class Bottleneck(nn.Module):
 
         out += residual
         return out
-
-    def bn_value(self):
-        """
-            record BatchNorm2d output
-        """
-        return [self.data1, self.data2, self.data3]
 
     def mask(self, index, cfg_mask):
         if index == 0:
@@ -74,6 +64,36 @@ class Bottleneck(nn.Module):
             self.bn3.bias.data.mul_(cfg_mask)
         else:
             raise ValueError("Index is not including.")
+
+    def forward_bn(self, x):
+        bn_value = []
+        residual = x
+
+        # group1
+        out = self.bn1(x)
+        bn_value.append(out.clone())
+        out = self.select(out)
+        out = self.relu(out)
+        out = self.conv1(out)
+
+        # group2
+        out = self.bn2(out)
+        bn_value.append(out.clone())
+        out = self.relu(out)
+        out = self.conv2(out)
+
+        # group3
+        out = self.bn3(out)
+        bn_value.append(out.clone())
+        out = self.relu(out)
+        out = self.conv3(out)
+
+        # down sample
+        if self.down_sample is not None:
+            residual = self.down_sample(x)
+
+        out += residual
+        return out, bn_value
 
 
 class resnet(nn.Module):

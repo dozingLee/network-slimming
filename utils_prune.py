@@ -302,6 +302,32 @@ def at_vgg_prune_model(model, percent, one_batch, cuda_available):
     return model, cfg, cfg_mask, pruned_ratio
 
 
+# def at_resnet_threshold_2(model, percent, one_batch):
+#     num_total = 0
+#     for m in model.modules():
+#         if isinstance(m, nn.BatchNorm2d):
+#             num_total += m.weight.data.shape[0]
+#     gamma_list = torch.zeros(num_total)
+#
+#     index = 0
+#     data = one_batch.clone()
+#     for idx, m in enumerate(model.modules()):
+#         if isinstance(m, nn.Conv2d) or isinstance(m, nn.ReLU) or isinstance(m, channel_selection):
+#             data = m(data)
+#         elif isinstance(m, nn.BatchNorm2d):
+#             data = m(data)
+#             value = data.clone()
+#             gamma = utils.gammas(value)
+#             size = value.shape[1]
+#             gamma_list[index:(index+size)] = gamma.clone()
+#             index += size
+#     y, i = torch.sort(gamma_list)
+#     threshold_index = int(num_total * percent)
+#     threshold = y[threshold_index]
+#     print("AT (attention transfer) 2 resnet index:{}, threshold: {}".format(threshold_index, threshold))
+#     return threshold, threshold_index
+
+
 def at_resnet_threshold(model, percent, one_batch):
     """
     :param model: model cuda
@@ -320,8 +346,7 @@ def at_resnet_threshold(model, percent, one_batch):
     for idx, m in enumerate(model.feature):         # modules (-classifier) -> feature
         if isinstance(m, nn.Sequential):            # feature (-Conv2d) -> layers
             for j, n in enumerate(m.children()):    # layers -> layer (many Bottlenecks)
-                data = n(data)
-                bn_value = n.bn_value()
+                data, bn_value = n.forward_bn(data)
                 for i, value in enumerate(bn_value):    # 3 batchNorm2ds
                     gamma = utils.gammas(value.clone())
                     size = value.shape[1]
@@ -338,6 +363,7 @@ def at_resnet_threshold(model, percent, one_batch):
     y, i = torch.sort(gamma_list)
     threshold_index = int(num_total * percent)
     threshold = y[threshold_index]
+    print("AT (attention transfer) resnet index:{}, threshold: {}".format(threshold_index, threshold))
     return threshold, threshold_index
 
 
@@ -351,8 +377,7 @@ def at_resnet_prune_model(model, percent, one_batch, cuda_available):
     for k, m in enumerate(model.feature):
         if isinstance(m, nn.Sequential):
             for j, n in enumerate(m.children()):
-                data = n(data)
-                bn_value = n.bn_value()
+                data, bn_value = n.forward_bn(data)
                 for i, value in enumerate(bn_value):    # 3 batchNorm2ds
                     gamma = utils.gammas(value.clone())
                     if cuda_available:

@@ -61,7 +61,43 @@ from models import channel_selection
     
     python prune.py --arch resnet --dataset cifar10 --depth 164 --percent 0.6 --pruning-method bn
         --model logs/sparsity_resnet164_cifar10_s_1e_4/model_best.pth.tar 
-        --save logs/bn_prune_resnet164_cifar10_percent_0.6
+        --save logs/bn_prune_resnet164_cifar10_percent_0.6_x
+    
+    
+    BN Cifar10 40%    
+    python prune.py --arch resnet --dataset cifar10 --depth 164 --percent 0.4 --pruning-method at
+        --model logs/sparsity_resnet164_cifar10_s_1e_4/model_best.pth.tar 
+        --save logs/at_prune_resnet164_cifar10_percent_0.4_x
+    
+    BN Cifar100 40%
+    python prune.py --arch resnet --dataset cifar100 --depth 164 --percent 0.4 --pruning-method bn
+        --model logs/sparsity_resnet164_cifar100_s_1e_4/model_best.pth.tar 
+        --save logs/bn_prune_resnet164_cifar100_percent_0.4
+    
+    AT Cifar100 40%
+    python prune.py --arch resnet --dataset cifar100 --depth 164 --percent 0.4 --pruning-method at
+        --model logs/sparsity_resnet164_cifar100_s_1e_4/model_best.pth.tar 
+        --save logs/at_prune_resnet164_cifar100_percent_0.4_x_2 --at-batch-size 8
+    
+    AT Cifar100 60%
+    python prune.py --arch resnet --dataset cifar100 --depth 164 --percent 0.6 --pruning-method at
+        --model logs/sparsity_resnet164_cifar100_s_1e_4/model_best.pth.tar 
+        --save logs/at_prune_resnet164_cifar100_percent_0.6_x_2 --at-batch-size 8
+    
+    AT Cifar100 60% update batch size
+    python prune.py --arch resnet --dataset cifar100 --depth 164 --percent 0.6 --pruning-method at
+        --model logs/sparsity_resnet164_cifar100_s_1e_4/model_best.pth.tar 
+        --save logs/at_prune_resnet164_cifar100_percent_0.6_x_3 --at-batch-size 8
+    
+    AT Cifar100 60% update batch size
+    python prune.py --arch resnet --dataset cifar100 --depth 164 --percent 0.6 --pruning-method at
+        --model logs/sparsity_resnet164_cifar100_s_1e_4/model_best.pth.tar 
+        --save logs/at_prune_resnet164_cifar100_percent_0.6_x_32 --at-batch-size 32
+    
+    AT Cifar100 60% (change new_model into pruned_model)
+    python prune.py --arch resnet --dataset cifar100 --depth 164 --percent 0.6 --pruning-method at
+        --model logs/sparsity_resnet164_cifar100_s_1e_4/model_best.pth.tar 
+        --save logs/at_prune_resnet164_cifar100_percent_0.6_x_x --at-batch-size 32
 '''
 
 # Prune settings
@@ -97,12 +133,12 @@ if not os.path.exists(args.save):
     os.makedirs(args.save)
 
 
-def save_model_record(save_path, cfg, origin_model, pruned_model, origin_dict, pruned_dict, cuda_available):
+def save_model_record(save_path, cfg, origin_model, new_model, origin_dict, pruned_dict, cuda_available):
     input = torch.randn(1, 3, 32, 32)
     if cuda_available:
         input = input.cuda()
     flops1, params1 = profile(origin_model, inputs=(input, ))
-    flops2, params2 = profile(pruned_model, inputs=(input, ))
+    flops2, params2 = profile(new_model, inputs=(input, ))
     origin_dict['FLOPs Real'], origin_dict['Params Real'] = flops1, params1
     pruned_dict['FLOPs Real'], pruned_dict['Params Real'] = flops2, params2
     origin_dict['FLOPs'], origin_dict['Parameters'] = clever_format([flops1, params1], "%.2f")
@@ -122,6 +158,7 @@ def save_model_record(save_path, cfg, origin_model, pruned_model, origin_dict, p
         fp.write(origin_str + '\n')
         fp.write(pruned_str + '\n')
         fp.write("Configuration,{}\n".format(str(cfg).replace(',', '/')))
+    fp.close()
 
 
 if __name__ == '__main__':
@@ -134,7 +171,6 @@ if __name__ == '__main__':
     # ==== prune model ====
     if args.pruning_method == 'bn':
         pruned_model, cfg, cfg_mask, pruned_ratio = utils_prune.bn_prune_model(model, args.percent, args.cuda)
-        acc_pruned, _ = utils.test(pruned_model, test_loader, args.cuda)
     elif args.pruning_method == 'at':
         data_loader = utils.get_test_loader(args.dataset, args.at_batch_size, args.num_thread, args.cuda)
         one_batch_data = utils.get_one_batch(data_loader, args.cuda)
@@ -146,9 +182,9 @@ if __name__ == '__main__':
                     model, args.percent, one_batch_data, args.cuda)
         else:
             raise ValueError("`arch` is not found.")
-        acc_pruned, _ = utils.test(pruned_model, test_loader, args.cuda)
     else:
         raise ValueError('Pruning Method does not exist.')
+    acc_pruned, _ = utils.test(pruned_model, test_loader, args.cuda)
 
     # ==== new model ====
     new_model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth, cfg=cfg)
@@ -163,12 +199,13 @@ if __name__ == '__main__':
     else:
         raise ValueError('Generate new model failed.')
     acc_new, _ = utils.test(new_model, test_loader, args.cuda)
+
     torch.save({'cfg': cfg, 'state_dict': new_model.state_dict()}, os.path.join(args.save, 'pruned.pth.tar'))
 
     # ==== save pruning record ====
     save_path = os.path.join(args.save, "pruning_record.csv")
     origin_data, pruned_data = {}, {}
-    origin_data['Model'] = "vgg{}-{}".format(args.depth, args.dataset)
+    origin_data['Model'] = "{}{}-{}".format(args.arch, args.depth, args.dataset)
     pruned_data['Model'] = "{} ({:.0f}% {} Pruned)".format(
         origin_data['Model'], args.percent * 100, args.pruning_method.upper())
     origin_data['Test Error(%)'] = '{:.2f}'.format((1 - best_prec1) * 100)

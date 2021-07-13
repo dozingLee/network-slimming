@@ -44,12 +44,16 @@ def resume_model(resume_file):
     if not os.path.isfile(resume_file):
         raise ValueError("Resume model file is not found at '{}'".format(resume_file))
     print("=> loading checkpoint '{}'".format(resume_file))
+    # checkpoint = np.load(resume_file)
     checkpoint = torch.load(resume_file)
     start_epoch = checkpoint['epoch']
     best_prec1 = checkpoint['best_prec1']
     state_dict = checkpoint['state_dict']
     opti_dict = checkpoint['optimizer']
-    cfg = checkpoint['cfg']
+    if 'cfg' in checkpoint:
+        cfg = checkpoint['cfg']
+    else:
+        cfg = None
     print("=> loaded checkpoint '{}' (epoch {}) Prec1: {:f}"
           .format(resume_file, start_epoch, best_prec1))
     return state_dict, opti_dict, start_epoch, best_prec1, cfg
@@ -177,7 +181,13 @@ def at(x):
 
     :return: [B, H × W]
     """
-    return F.normalize(x.pow(2).mean(1).view(x.size(0), -1))
+    data = x.cuda().data.cpu().numpy()
+    data = np.mean(np.square(data), axis=1)
+    data = data.reshape(data.shape[0], -1)
+    v = np.linalg.norm(data, axis=1, keepdims=True)
+    data = data / v
+    return torch.tensor(data).cuda()
+    # return F.normalize(x.pow(2).mean(1).view(x.size(0), -1))
 
 
 def at_loss(x, y):
@@ -191,7 +201,10 @@ def at_loss(x, y):
 
     :return: []
     """
-    return (at(x) - at(y)).pow(2).mean()
+    value = (at(x) - at(y)).pow(2).mean()
+    del x, y
+    torch.cuda.empty_cache()
+    return value
 
 
 def distillation(y_s, y_t, label, T, alpha):
@@ -220,8 +233,8 @@ def gammas(feature_map):
     b, c, h, w = feature_map.shape
     gamma = torch.zeros(c)
     for j in range(c):
-        feature_map_j = feature_map[:, torch.arange(c) != j, :, :]
-        gamma[j] = at_loss(feature_map, feature_map_j)
+        feature_map_j = feature_map[:, torch.arange(c) != j, :, :].clone()
+        gamma[j] = at_loss(feature_map.clone(), feature_map_j)
     return gamma
 
 
