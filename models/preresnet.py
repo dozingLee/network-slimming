@@ -95,6 +95,39 @@ class Bottleneck(nn.Module):
         out += residual
         return out, bn_value
 
+    def forward_ge(self, x):
+        bn_value, bn_weight = [], []
+        residual = x
+
+        # group1
+        out = self.bn1(x)
+        bn_value.append(out.clone())
+        bn_weight.append(self.bn1.weight.data)
+        out = self.select(out)
+        out = self.relu(out)
+        out = self.conv1(out)
+
+        # group2
+        out = self.bn2(out)
+        bn_value.append(out.clone())
+        bn_weight.append(self.bn2.weight.data)
+        out = self.relu(out)
+        out = self.conv2(out)
+
+        # group3
+        out = self.bn3(out)
+        bn_value.append(out.clone())
+        bn_weight.append(self.bn3.weight.data)
+        out = self.relu(out)
+        out = self.conv3(out)
+
+        # down sample
+        if self.down_sample is not None:
+            residual = self.down_sample(x)
+
+        out += residual
+        return out, bn_value, bn_weight
+
 
 class resnet(nn.Module):
     def __init__(self, depth=164, dataset='cifar10', cfg=None, block_cfg=None):
@@ -131,7 +164,7 @@ class resnet(nn.Module):
 
         # model feature
         conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1, bias=False)
-        layer1 = self._make_layer(block, 16, n, cfg=cfg[0:3 * n])                # 32 × 32
+        layer1 = self._make_layer(block, 16, n, cfg=cfg[0:3 * n])  # 32 × 32
         layer2 = self._make_layer(block, 32, n, cfg=cfg[3 * n:6 * n], stride=2)  # 16 × 16
         layer3 = self._make_layer(block, 64, n, cfg=cfg[6 * n:9 * n], stride=2)  # 8 × 8
         bn = nn.BatchNorm2d(64 * block.expansion)

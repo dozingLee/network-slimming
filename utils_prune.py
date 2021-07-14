@@ -328,6 +328,97 @@ def at_vgg_prune_model(model, percent, one_batch, cuda_available):
 #     return threshold, threshold_index
 
 
+def ge_resnet_threshold(model, percent, one_batch, cuda_available):
+    num_total = 0
+    for m in model.modules():
+        if isinstance(m, nn.BatchNorm2d):
+            num_total += m.weight.data.shape[0]
+    gamma_list = torch.zeros(num_total)
+
+    index = 0
+    data = one_batch.clone()
+    for idx, m in enumerate(model.feature):  # modules (-classifier) -> feature
+        if isinstance(m, nn.Sequential):  # feature (-Conv2d) -> layers
+            for j, n in enumerate(m.children()):  # layers -> layer (many Bottlenecks)
+                data, bn_value, bn_weight = n.forward_ge(data)
+                for i, value in enumerate(bn_value):  # 3 batchNorm2ds
+                    gamma = utils.gammas(value.clone())
+                    if cuda_available:
+                        gamma = gamma.cuda()
+                    size = value.shape[1]
+                    ge_value = gamma * bn_weight[i]
+                    gamma_list[index:(index + size)] = ge_value.clone()
+                    index += size
+        else:
+            data = m(data)
+            if isinstance(m, nn.BatchNorm2d):
+                gamma = utils.gammas(data.clone())
+                if cuda_available:
+                    gamma = gamma.cuda()
+                gamma = gamma * m.weight.data
+                size = data.shape[1]
+                gamma_list[index:(index + size)] = gamma.clone()
+                index += size
+
+    y, i = torch.sort(gamma_list)
+    threshold_index = int(num_total * percent)
+    threshold = y[threshold_index]
+    print("AT (attention transfer) resnet index:{}, threshold: {:.4f}".format(threshold_index, threshold))
+    return threshold, threshold_index
+
+
+def ge_resnet_prune_model(model, percent, one_batch, cuda_available):
+    threshold, thre_idx = ge_resnet_threshold(model, percent, one_batch, cuda_available)
+    if cuda_available:
+        threshold = threshold.cuda()
+    num_pruned, num_total = 0, 0
+    cfg, cfg_mask = [], []
+    data = one_batch.clone()
+    for k, m in enumerate(model.feature):
+        if isinstance(m, nn.Sequential):
+            for j, n in enumerate(m.children()):
+                data, bn_value, bn_weight = n.forward_ge(data)
+                for i, value in enumerate(bn_value):  # 3 batchNorm2ds
+                    gamma = utils.gammas(value.clone())
+                    if cuda_available:
+                        gamma = gamma.cuda()
+                    gamma = bn_weight[i] * gamma
+                    mask = gamma.gt(threshold).float()
+                    if torch.sum(mask) == 0:
+                        mask[0] = 1.0
+                    n.mask(i, mask)
+                    cfg.append(int(torch.sum(mask)))
+                    cfg_mask.append(mask.clone())
+                    num_total += mask.shape[0]
+                    num_pruned += mask.shape[0] - torch.sum(mask)
+                    print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
+                          format(k, mask.shape[0], int(torch.sum(mask))))
+        else:
+            data = m(data)
+            if isinstance(m, nn.BatchNorm2d):
+                gamma = utils.gammas(data.clone())
+                if cuda_available:
+                    gamma = gamma.cuda()
+                gamma = gamma * m.weight.data
+                mask = gamma.gt(threshold).float()
+                if torch.sum(mask) == 0:
+                    mask[0] = 1.0
+                m.weight.data.mul_(mask)
+                m.bias.data.mul_(mask)
+                cfg.append(int(torch.sum(mask)))
+                cfg_mask.append(mask.clone())
+                num_total += mask.shape[0]
+                num_pruned += mask.shape[0] - torch.sum(mask)
+                print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
+                      format(k, mask.shape[0], int(torch.sum(mask))))
+
+    pruned_ratio = num_pruned / num_total
+    print('Preprocess Successfully! Pruned ratio: {}'.format(pruned_ratio))
+    print('Pruned cfg: {}'.format(cfg))
+    return model, cfg, cfg_mask, pruned_ratio
+
+
+
 def at_resnet_threshold(model, percent, one_batch):
     """
     :param model: model cuda
@@ -363,7 +454,7 @@ def at_resnet_threshold(model, percent, one_batch):
     y, i = torch.sort(gamma_list)
     threshold_index = int(num_total * percent)
     threshold = y[threshold_index]
-    print("AT (attention transfer) resnet index:{}, threshold: {}".format(threshold_index, threshold))
+    print("AT (attention transfer) resnet index:{}, threshold: {:.4f}".format(threshold_index, threshold))
     return threshold, threshold_index
 
 

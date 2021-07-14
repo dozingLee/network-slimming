@@ -98,6 +98,11 @@ from models import channel_selection
     python prune.py --arch resnet --dataset cifar100 --depth 164 --percent 0.6 --pruning-method at
         --model logs/sparsity_resnet164_cifar100_s_1e_4/model_best.pth.tar 
         --save logs/at_prune_resnet164_cifar100_percent_0.6_x_x --at-batch-size 32
+        
+    GE    
+    python prune.py --arch resnet --dataset cifar100 --depth 164 --percent 0.6 --pruning-method ge
+        --model logs/sparsity_resnet164_cifar100_s_1e_4/model_best.pth.tar 
+        --save logs/ge_prune_resnet164_cifar100_percent_0.6 --at-batch-size 32
 '''
 
 # Prune settings
@@ -182,6 +187,11 @@ if __name__ == '__main__':
                     model, args.percent, one_batch_data, args.cuda)
         else:
             raise ValueError("`arch` is not found.")
+    elif args.pruning_method == 'ge':
+        data_loader = utils.get_test_loader(args.dataset, args.at_batch_size, args.num_thread, args.cuda)
+        one_batch_data = utils.get_one_batch(data_loader, args.cuda)
+        pruned_model, cfg, cfg_mask, pruned_ratio = utils_prune.ge_resnet_prune_model(
+                model, args.percent, one_batch_data, args.cuda)
     else:
         raise ValueError('Pruning Method does not exist.')
     acc_pruned, _ = utils.test(pruned_model, test_loader, args.cuda)
