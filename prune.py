@@ -103,6 +103,13 @@ from models import channel_selection
     python prune.py --arch resnet --dataset cifar100 --depth 164 --percent 0.6 --pruning-method ge
         --model logs/sparsity_resnet164_cifar100_s_1e_4/model_best.pth.tar 
         --save logs/ge_prune_resnet164_cifar100_percent_0.6 --at-batch-size 32
+    
+    
+    DenseNet
+    BN
+    python prune.py --arch densenet --dataset cifar10 --depth 40 --percent 0.4 --pruning-method bn
+        --model logs/sparsity_densenet40_cifar10_s_1e_4/model_best.pth.tar 
+        --save logs/bn_prune_densenet40_cifar10_percent_0.4
 '''
 
 # Prune settings

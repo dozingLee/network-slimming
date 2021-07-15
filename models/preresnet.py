@@ -139,7 +139,7 @@ class resnet(nn.Module):
                 9 = 3 layers × 3 conv2d (every block)
         :param cfg:
             if depth = 164, then len(cfg) = 164
-        :param conv_cfg:
+        :param block_cfg:
             every layer block indexes: [6, 12, 18], [9, 18], [18]
             every `conv_cfg` value should <= `n` (if depth = 164, n = 18)
 
@@ -191,7 +191,7 @@ class resnet(nn.Module):
         :param block: Bottleneck item
         :param planes: record the layer's output channel size
         :param num_block: how many blocks in every layer
-        :param cfg:
+        :param cfg: channel config of all blocks
         """
         down_sample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
@@ -214,9 +214,6 @@ class resnet(nn.Module):
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(0.5)
                 m.bias.data.zero_()
-            elif isinstance(m, nn.Linear):
-                m.weight.data.normal_(0, 0.01)
-                m.bias.data.zero_()
 
     def forward(self, x):
         # model feature
@@ -224,11 +221,9 @@ class resnet(nn.Module):
         if self.block_cfg:
             for k, m in enumerate(self.feature):
                 if isinstance(m, nn.Sequential):
-                    block_idx = 0
                     for j, block_item in enumerate(m):
-                        block_idx += 1
                         x = block_item(x)
-                        if block_idx in self.block_cfg:
+                        if j + 1 in self.block_cfg:
                             block_value.append(x)
                 else:
                     x = m(x)

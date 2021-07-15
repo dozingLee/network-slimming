@@ -49,6 +49,10 @@ from thop import clever_format
     3. resnet164-cifar100
     python main.py -sr --s 0.00001 --dataset cifar100 --arch resnet --depth 164 --save logs/sparsity_resnet164_cifar100_s_1e_4
     
+    4. densenet40-cifar10
+    python main.py -sr --s 0.00001 --dataset cifar10 --arch densenet --depth 40 --save logs/sparsity_densenet40_cifar10_s_1e_4
+    
+    
     ===== Fine-tune ====
     python main.py --refine logs/bn_prune_resnet164_cifar10_percent_0.4/pruned.pth.tar  --log-interval 50
         --dataset cifar10 --arch resnet --depth 164 --epochs 160 --seed 2 --not-init-weight
@@ -74,6 +78,11 @@ from thop import clever_format
     resume base
     python main.py -sr --s 0.00001 --dataset cifar10 --arch resnet --depth 164 --save logs/sparsity_resnet_cifar10_s_1e_4_x
         --resume logs/sparsity_resnet_cifar10_s_1e_4_x/checkpoint.pth.tar
+    
+    
+    python main.py --refine logs/bn_prune_densenet40_cifar10_percent_0.4/pruned.pth.tar  --log-interval 50
+        --dataset cifar10 --arch densenet --depth 40 --epochs 160 --seed 2 --not-init-weight
+        --save logs/ft_inherit_bn_densenet40_vgg19_cifar10_percent_0.4_seed_2
 """
 
 
